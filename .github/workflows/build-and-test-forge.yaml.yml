@@ -19,7 +19,7 @@ jobs:
       - run: cargo test --all-features
     defaults:
       run:
-        working-directory: quorum
+        working-directory: forge
 
   formatting:
     name: cargo fmt
