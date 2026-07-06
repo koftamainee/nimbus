@@ -14,6 +14,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	defer w.Close()
 
 	s, err := store.New(w)
