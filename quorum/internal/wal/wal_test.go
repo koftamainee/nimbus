@@ -1,11 +1,9 @@
 package wal
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 
@@ -41,7 +39,7 @@ func TestOpenExistingFile(t *testing.T) {
 
 	w, err := Open(path)
 	require.NoError(t, err)
-	err = w.Append(Entry{Operation: OpSet, Key: "x", Value: "1"})
+	err = w.Append([]byte(`{"op":"SET","key":"x","value":"1"}`))
 	require.NoError(t, err)
 
 	_, err = os.Stat(path)
@@ -61,26 +59,26 @@ func TestAppendAndReplay(t *testing.T) {
 	w, err := Open(path)
 	require.NoError(t, err)
 
-	operations := make([]Entry, 3)
-	operations[0] = Entry{Operation: OpSet, Key: "foo", Value: "bar"}
-	operations[1] = Entry{Operation: OpSet, Key: "bar", Value: "foo"}
-	operations[2] = Entry{Operation: OpDel, Key: "foo"}
-
-	var b strings.Builder
-	for _, e := range operations {
-		err = json.NewEncoder(&b).Encode(e)
-		require.NoError(t, err)
+	operations := [][]byte{
+		[]byte(`{"op":"SET","key":"foo","value":"bar"}`),
+		[]byte(`{"op":"SET","key":"bar","value":"foo"}`),
+		[]byte(`{"op":"DEL","key":"foo"}`),
 	}
-	expectedData := b.String()
 
-	for _, operation := range operations {
-		err := w.Append(operation)
+	var expected []byte
+	for _, op := range operations {
+		expected = append(expected, op...)
+		expected = append(expected, '\n')
+	}
+
+	for _, op := range operations {
+		err := w.Append(op)
 		require.NoError(t, err)
 	}
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.Equal(t, expectedData, string(data))
+	assert.Equal(t, string(expected), string(data))
 
 	err = w.Close()
 	require.NoError(t, err)
@@ -89,8 +87,8 @@ func TestAppendAndReplay(t *testing.T) {
 	require.NoError(t, err)
 
 	i := 0
-	apply := func(e Entry) error {
-		require.Equal(t, operations[i], e)
+	apply := func(data []byte) error {
+		require.Equal(t, operations[i], data)
 		i++
 		return nil
 	}
@@ -111,8 +109,7 @@ func TestConcurrentAppend(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			e := Entry{Operation: OpSet, Key: "k", Value: strconv.Itoa(n)}
-			w.Append(e)
+			w.Append([]byte(`{"op":"SET","key":"k","value":"` + strconv.Itoa(n) + `"}`))
 		}(i)
 	}
 	wg.Wait()
@@ -122,7 +119,7 @@ func TestConcurrentAppend(t *testing.T) {
 	count := 0
 	w, err = Open(path)
 	require.NoError(t, err)
-	apply := func(e Entry) error {
+	apply := func([]byte) error {
 		count++
 		return nil
 	}
@@ -134,23 +131,24 @@ func TestConcurrentAppend(t *testing.T) {
 	require.Equal(t, 100, count)
 }
 
-func TestReplayCorruptedEntry(t *testing.T) {
+func TestReplayAllLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new.wal")
-	err := os.WriteFile(path, []byte("garbagevalue\n"+`{"op": "SET", "key": "foo", "value": "bar"}`), 0644)
+	err := os.WriteFile(path, []byte("line1\nline2\n"), 0644)
 	require.NoError(t, err)
 	w, err := Open(path)
 	require.NoError(t, err)
 
-	count := 0
-	apply := func(e Entry) error {
-		count++
-		require.Equal(t, Entry{Operation: OpSet, Key: "foo", Value: "bar"}, e)
+	var lines [][]byte
+	apply := func(data []byte) error {
+		lines = append(lines, data)
 		return nil
 	}
 
 	err = w.Replay(apply)
 	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, 2, len(lines))
+	require.Equal(t, "line1", string(lines[0]))
+	require.Equal(t, "line2", string(lines[1]))
 
 	err = w.Close()
 	require.NoError(t, err)

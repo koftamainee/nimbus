@@ -1,0 +1,28 @@
+syntax = "proto3";
+package quorum.v1;
+
+option go_package = "quorum/gen/quorum/v1;quorumv1";
+
+service Watch {
+    rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+message WatchRequest {
+    bytes key = 1;
+    int64 start_revision = 2;
+}
+
+message WatchResponse {
+    repeated Event events = 1;
+}
+
+message Event {
+    enum EventType {
+        PUT = 0;
+        DELETE = 1;
+    }
+    EventType type = 1;
+    bytes key = 2;
+    bytes value = 3;
+    int64 revision = 4;
+}

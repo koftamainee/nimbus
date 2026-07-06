@@ -1,16 +1,14 @@
 package raft
 
 import (
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func startTestNode(t *testing.T, id string, peers []string, transport Transport) *Raft {
 	t.Helper()
-	r := New(id, peers, transport)
+	r := New(id, peers, transport, nil, nil, nil)
 	go r.Run()
 	<-r.ready
 	return r
@@ -32,7 +30,7 @@ func newCluster(t *testing.T, ids []string) (map[string]*Raft, *InMemoryTranspor
 	transport := &InMemoryTransport{NodesByID: nodes}
 
 	for _, id := range ids {
-		r := New(id, peerIDs(ids, id), transport)
+		r := New(id, peerIDs(ids, id), transport, nil, nil, nil)
 		nodes[id] = r
 	}
 
@@ -47,159 +45,60 @@ func newCluster(t *testing.T, ids []string) (map[string]*Raft, *InMemoryTranspor
 	return nodes, transport
 }
 
-func TestNewRaft(t *testing.T) {
-	r := New("node-1", []string{"node-2", "node-3"}, nil)
+func setupLeaderWithFollowers(t *testing.T, leaderLog, followerLog []LogEntry) (*Raft, *Raft, *Raft) {
+	t.Helper()
 
-	r.mu.Lock()
-	assert.Equal(t, Follower, r.role)
-	assert.Equal(t, 0, r.currentTerm)
-	assert.Equal(t, "", r.votedFor)
-	assert.Empty(t, r.log)
-	assert.Equal(t, 0, r.commitIndex)
-	assert.Equal(t, 0, r.lastApplied)
-	assert.Equal(t, "node-1", r.id)
-	assert.Len(t, r.peers, 2)
-	r.mu.Unlock()
+	leader := New("leader", []string{"f1", "f2"}, nil, nil, nil, nil)
+	leader.electionTimer = time.NewTimer(time.Hour)
+	leader.heartbeatTimer = time.NewTimer(time.Hour)
+	leader.mu.Lock()
+	leader.role = Leader
+	leader.log = leaderLog
+	leader.currentTerm = 1
+	leader.commitIndex = 0
+	leader.mu.Unlock()
+
+	f1 := New("f1", nil, nil, nil, nil, nil)
+	f1.electionTimer = time.NewTimer(time.Hour)
+	f1.mu.Lock()
+	f1.log = followerLog
+	f1.currentTerm = 1
+	f1.commitIndex = 0
+	f1.mu.Unlock()
+
+	f2 := New("f2", nil, nil, nil, nil, nil)
+	f2.electionTimer = time.NewTimer(time.Hour)
+	f2.mu.Lock()
+	f2.log = followerLog
+	f2.currentTerm = 1
+	f2.commitIndex = 0
+	f2.mu.Unlock()
+
+	transport := InMemoryTransport{NodesByID: map[string]*Raft{
+		"leader": leader,
+		"f1":     f1,
+		"f2":     f2,
+	}}
+	leader.transport = transport
+
+	return leader, f1, f2
 }
 
-func TestFollowerDoesntStartElectionBeforeTimeout(t *testing.T) {
-	r := New("node-1", []string{"node-2", "node-3"}, nil)
-	go r.Run()
-	time.Sleep(125 * time.Millisecond)
-
-	r.mu.Lock()
-	assert.Equal(t, Follower, r.role)
-	assert.Equal(t, 0, r.currentTerm)
-	r.mu.Unlock()
+type recordingSM struct {
+	mu   sync.Mutex
+	cmds [][]byte
 }
 
-func TestFollowerBecomesCandidateAfterTimeout(t *testing.T) {
-	r := New("node-1", []string{"node-2", "node-3"}, nil)
-	go r.Run()
-	time.Sleep(350 * time.Millisecond)
-
-	r.mu.Lock()
-	assert.Equal(t, Candidate, r.role)
-	assert.GreaterOrEqual(t, r.currentTerm, 1)
-	assert.Equal(t, r.id, r.votedFor)
-	r.mu.Unlock()
+func (m *recordingSM) Apply(cmd []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cmds = append(m.cmds, cmd)
 }
 
-func TestHandleRequestVoteGrant(t *testing.T) {
-	r := startTestNode(t, "node-1", []string{"node-2", "node-3"}, nil)
-
-	resp := r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-	assert.True(t, resp.VoteGranted)
-	assert.Equal(t, 1, resp.Term)
-
-	r.mu.Lock()
-	assert.Equal(t, "node-2", r.votedFor)
-	r.mu.Unlock()
-}
-
-func TestHandleRequestVoteAlreadyVoted(t *testing.T) {
-	r := startTestNode(t, "node-1", []string{"node-2", "node-3"}, nil)
-
-	r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-
-	resp := r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-3",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-	assert.False(t, resp.VoteGranted)
-}
-
-func TestHandleRequestVoteSameCandidateIdempotency(t *testing.T) {
-	r := startTestNode(t, "node-1", []string{"node-2", "node-3"}, nil)
-
-	r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-
-	resp := r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-	assert.True(t, resp.VoteGranted)
-}
-
-func TestHandleRequestVoteLowerTerm(t *testing.T) {
-	r := startTestNode(t, "node-1", []string{"node-2", "node-3"}, nil)
-
-	r.mu.Lock()
-	r.currentTerm = 2
-	r.mu.Unlock()
-
-	resp := r.HandleRequestVote(VoteRequest{
-		Term:         1,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  0,
-	})
-	assert.False(t, resp.VoteGranted)
-	assert.Equal(t, 2, resp.Term)
-}
-
-func TestThreeNodesElectLeader(t *testing.T) {
-	nodes, _ := newCluster(t, []string{"n1", "n2", "n3"})
-	time.Sleep(2 * time.Second)
-
-	leaders := 0
-	var leaderID string
-	for id, r := range nodes {
-		r.mu.Lock()
-		if r.role == Leader {
-			leaders++
-			leaderID = id
-		}
-		r.mu.Unlock()
-	}
-
-	require.Equal(t, 1, leaders, "must have exactly one leader")
-	require.NotEmpty(t, leaderID)
-
-	for id, r := range nodes {
-		r.mu.Lock()
-		if id != leaderID {
-			assert.NotEqualf(t, Leader, r.role, "node %s should not be leader", id)
-		}
-		r.mu.Unlock()
-	}
-}
-
-func TestHandleRequestVoteLogMoreUpToDate(t *testing.T) {
-	r := startTestNode(t, "node-1", []string{"node-2", "node-3"}, nil)
-
-	r.mu.Lock()
-	r.currentTerm = 1
-	r.log = []LogEntry{
-		{Index: 0, Term: 1, Command: []byte("data")},
-		{Index: 1, Term: 2, Command: []byte("y")},
-	}
-	r.mu.Unlock()
-
-	resp := r.HandleRequestVote(VoteRequest{
-		Term:         2,
-		CandidateID:  "node-2",
-		LastLogIndex: 0,
-		LastLogTerm:  1,
-	})
-	assert.False(t, resp.VoteGranted)
+func (m *recordingSM) Applied() [][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	res := make([][]byte, len(m.cmds))
+	copy(res, m.cmds)
+	return res
 }

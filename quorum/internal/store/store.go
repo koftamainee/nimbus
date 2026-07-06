@@ -1,67 +1,113 @@
 package store
 
 import (
-	"quorum/internal/wal"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
+
+	quorumv1 "quorum/gen/quorum/v1"
 )
 
+type Value struct {
+	Value    string
+	Revision int64
+}
+
 type Store struct {
-	mu   sync.RWMutex
-	data map[string]string
-	wal  *wal.WAL
+	mu       sync.RWMutex
+	data     map[string]*Value
+	revision int64
 }
 
-func New(w *wal.WAL) (*Store, error) {
-	store := &Store{data: make(map[string]string), wal: w}
+func New() *Store {
+	return &Store{data: make(map[string]*Value)}
+}
 
-	apply := func(entry wal.Entry) error {
-		switch entry.Operation {
-		case wal.OpSet:
-			store.data[entry.Key] = entry.Value
+func (s *Store) Apply(cmd []byte) {
+	var req quorumv1.InternalRaftRequest
+	if err := proto.Unmarshal(cmd, &req); err != nil {
+		return
+	}
 
-		case wal.OpDel:
-			delete(store.data, entry.Key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.revision++
+
+	switch r := req.Cmd.(type) {
+	case *quorumv1.InternalRaftRequest_Put:
+		s.data[string(r.Put.Key)] = &Value{
+			Value:    string(r.Put.Value),
+			Revision: s.revision,
 		}
-		return nil
-	}
 
-	err := w.Replay(apply)
-	if err != nil {
-		return nil, err
-	}
+	case *quorumv1.InternalRaftRequest_Delete:
+		delete(s.data, string(r.Delete.Key))
 
-	return store, nil
+	case *quorumv1.InternalRaftRequest_Txn:
+		s.applyTxn(r.Txn)
+	}
 }
 
-func (store *Store) Set(key string, value string) error {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-
-	err := store.wal.Append(wal.Entry{Operation: wal.OpSet, Key: key, Value: value})
-	if err != nil {
-		return err
+func (s *Store) applyTxn(txn *quorumv1.TxnRequest) {
+	ok := true
+	for _, cmp := range txn.Compare {
+		if !s.evalCompare(cmp) {
+			ok = false
+			break
+		}
 	}
 
-	store.data[key] = value
-	return nil
-}
-
-func (store *Store) Get(key string) (string, bool) {
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-	val, ok := store.data[key]
-	return val, ok
-}
-
-func (store *Store) Delete(key string) error {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-
-	err := store.wal.Append(wal.Entry{Operation: wal.OpDel, Key: key})
-	if err != nil {
-		return err
+	ops := txn.Failure
+	if ok {
+		ops = txn.Success
 	}
 
-	delete(store.data, key)
-	return nil
+	for _, op := range ops {
+		switch o := op.Op.(type) {
+		case *quorumv1.Operation_Put:
+			s.data[string(o.Put.Key)] = &Value{
+				Value:    string(o.Put.Value),
+				Revision: s.revision,
+			}
+		case *quorumv1.Operation_Delete:
+			delete(s.data, string(o.Delete.Key))
+		}
+	}
+}
+
+func (s *Store) evalCompare(cmp *quorumv1.Compare) bool {
+	v, ok := s.data[string(cmp.Key)]
+	if !ok {
+		return cmp.Type == quorumv1.Compare_NOT_EQUAL && len(cmp.Target) == 0
+	}
+
+	switch cmp.Type {
+	case quorumv1.Compare_EQUAL:
+		return v.Value == string(cmp.Target)
+	case quorumv1.Compare_NOT_EQUAL:
+		return v.Value != string(cmp.Target)
+	case quorumv1.Compare_GREATER:
+		return v.Value > string(cmp.Target)
+	case quorumv1.Compare_LESS:
+		return v.Value < string(cmp.Target)
+	default:
+		return false
+	}
+}
+
+func (s *Store) Get(key string) (string, int64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.data[key]
+	if !ok {
+		return "", 0, false
+	}
+	return v.Value, v.Revision, true
+}
+
+func (s *Store) Revision() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.revision
 }
