@@ -705,6 +705,178 @@ func (*OperationResponse_Put) isOperationResponse_Resp() {}
 
 func (*OperationResponse_Delete) isOperationResponse_Resp() {}
 
+type RangeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	RangeEnd      []byte                 `protobuf:"bytes,2,opt,name=range_end,json=rangeEnd,proto3" json:"range_end,omitempty"`
+	Limit         int64                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangeRequest) Reset() {
+	*x = RangeRequest{}
+	mi := &file_quorum_v1_kv_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeRequest) ProtoMessage() {}
+
+func (x *RangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_kv_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeRequest.ProtoReflect.Descriptor instead.
+func (*RangeRequest) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RangeRequest) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *RangeRequest) GetRangeEnd() []byte {
+	if x != nil {
+		return x.RangeEnd
+	}
+	return nil
+}
+
+func (x *RangeRequest) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type RangeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kvs           []*KeyValue            `protobuf:"bytes,1,rep,name=kvs,proto3" json:"kvs,omitempty"`
+	More          bool                   `protobuf:"varint,2,opt,name=more,proto3" json:"more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RangeResponse) Reset() {
+	*x = RangeResponse{}
+	mi := &file_quorum_v1_kv_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RangeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RangeResponse) ProtoMessage() {}
+
+func (x *RangeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_kv_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RangeResponse.ProtoReflect.Descriptor instead.
+func (*RangeResponse) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RangeResponse) GetKvs() []*KeyValue {
+	if x != nil {
+		return x.Kvs
+	}
+	return nil
+}
+
+func (x *RangeResponse) GetMore() bool {
+	if x != nil {
+		return x.More
+	}
+	return false
+}
+
+type KeyValue struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         []byte                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyValue) Reset() {
+	*x = KeyValue{}
+	mi := &file_quorum_v1_kv_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyValue) ProtoMessage() {}
+
+func (x *KeyValue) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_kv_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyValue.ProtoReflect.Descriptor instead.
+func (*KeyValue) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *KeyValue) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *KeyValue) GetValue() []byte {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *KeyValue) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 type InternalRaftRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    uint64                 `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -720,7 +892,7 @@ type InternalRaftRequest struct {
 
 func (x *InternalRaftRequest) Reset() {
 	*x = InternalRaftRequest{}
-	mi := &file_quorum_v1_kv_proto_msgTypes[11]
+	mi := &file_quorum_v1_kv_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -732,7 +904,7 @@ func (x *InternalRaftRequest) String() string {
 func (*InternalRaftRequest) ProtoMessage() {}
 
 func (x *InternalRaftRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quorum_v1_kv_proto_msgTypes[11]
+	mi := &file_quorum_v1_kv_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -745,7 +917,7 @@ func (x *InternalRaftRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InternalRaftRequest.ProtoReflect.Descriptor instead.
 func (*InternalRaftRequest) Descriptor() ([]byte, []int) {
-	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{11}
+	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *InternalRaftRequest) GetId() uint64 {
@@ -858,19 +1030,31 @@ const file_quorum_v1_kv_proto_rawDesc = "" +
 	"\x11OperationResponse\x12*\n" +
 	"\x03put\x18\x01 \x01(\v2\x16.quorum.v1.PutResponseH\x00R\x03put\x123\n" +
 	"\x06delete\x18\x02 \x01(\v2\x19.quorum.v1.DeleteResponseH\x00R\x06deleteB\x06\n" +
-	"\x04resp\"\xb6\x01\n" +
+	"\x04resp\"S\n" +
+	"\fRangeRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x1b\n" +
+	"\trange_end\x18\x02 \x01(\fR\brangeEnd\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x03R\x05limit\"J\n" +
+	"\rRangeResponse\x12%\n" +
+	"\x03kvs\x18\x01 \x03(\v2\x13.quorum.v1.KeyValueR\x03kvs\x12\x12\n" +
+	"\x04more\x18\x02 \x01(\bR\x04more\"N\n" +
+	"\bKeyValue\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\xb6\x01\n" +
 	"\x13InternalRaftRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\x12)\n" +
 	"\x03put\x18\n" +
 	" \x01(\v2\x15.quorum.v1.PutRequestH\x00R\x03put\x122\n" +
 	"\x06delete\x18\v \x01(\v2\x18.quorum.v1.DeleteRequestH\x00R\x06delete\x12)\n" +
 	"\x03txn\x18\f \x01(\v2\x15.quorum.v1.TxnRequestH\x00R\x03txnB\x05\n" +
-	"\x03cmd2\xe5\x01\n" +
+	"\x03cmd2\xa1\x02\n" +
 	"\x02KV\x124\n" +
 	"\x03Put\x12\x15.quorum.v1.PutRequest\x1a\x16.quorum.v1.PutResponse\x124\n" +
 	"\x03Get\x12\x15.quorum.v1.GetRequest\x1a\x16.quorum.v1.GetResponse\x12=\n" +
 	"\x06Delete\x12\x18.quorum.v1.DeleteRequest\x1a\x19.quorum.v1.DeleteResponse\x124\n" +
-	"\x03Txn\x12\x15.quorum.v1.TxnRequest\x1a\x16.quorum.v1.TxnResponseB\x1fZ\x1dquorum/gen/quorum/v1;quorumv1b\x06proto3"
+	"\x03Txn\x12\x15.quorum.v1.TxnRequest\x1a\x16.quorum.v1.TxnResponse\x12:\n" +
+	"\x05Range\x12\x17.quorum.v1.RangeRequest\x1a\x18.quorum.v1.RangeResponseB\x1fZ\x1dquorum/gen/quorum/v1;quorumv1b\x06proto3"
 
 var (
 	file_quorum_v1_kv_proto_rawDescOnce sync.Once
@@ -885,7 +1069,7 @@ func file_quorum_v1_kv_proto_rawDescGZIP() []byte {
 }
 
 var file_quorum_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_quorum_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_quorum_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_quorum_v1_kv_proto_goTypes = []any{
 	(Compare_CompareType)(0),    // 0: quorum.v1.Compare.CompareType
 	(*PutRequest)(nil),          // 1: quorum.v1.PutRequest
@@ -899,7 +1083,10 @@ var file_quorum_v1_kv_proto_goTypes = []any{
 	(*Operation)(nil),           // 9: quorum.v1.Operation
 	(*TxnResponse)(nil),         // 10: quorum.v1.TxnResponse
 	(*OperationResponse)(nil),   // 11: quorum.v1.OperationResponse
-	(*InternalRaftRequest)(nil), // 12: quorum.v1.InternalRaftRequest
+	(*RangeRequest)(nil),        // 12: quorum.v1.RangeRequest
+	(*RangeResponse)(nil),       // 13: quorum.v1.RangeResponse
+	(*KeyValue)(nil),            // 14: quorum.v1.KeyValue
+	(*InternalRaftRequest)(nil), // 15: quorum.v1.InternalRaftRequest
 }
 var file_quorum_v1_kv_proto_depIdxs = []int32{
 	8,  // 0: quorum.v1.TxnRequest.compare:type_name -> quorum.v1.Compare
@@ -911,22 +1098,25 @@ var file_quorum_v1_kv_proto_depIdxs = []int32{
 	11, // 6: quorum.v1.TxnResponse.responses:type_name -> quorum.v1.OperationResponse
 	2,  // 7: quorum.v1.OperationResponse.put:type_name -> quorum.v1.PutResponse
 	6,  // 8: quorum.v1.OperationResponse.delete:type_name -> quorum.v1.DeleteResponse
-	1,  // 9: quorum.v1.InternalRaftRequest.put:type_name -> quorum.v1.PutRequest
-	5,  // 10: quorum.v1.InternalRaftRequest.delete:type_name -> quorum.v1.DeleteRequest
-	7,  // 11: quorum.v1.InternalRaftRequest.txn:type_name -> quorum.v1.TxnRequest
-	1,  // 12: quorum.v1.KV.Put:input_type -> quorum.v1.PutRequest
-	3,  // 13: quorum.v1.KV.Get:input_type -> quorum.v1.GetRequest
-	5,  // 14: quorum.v1.KV.Delete:input_type -> quorum.v1.DeleteRequest
-	7,  // 15: quorum.v1.KV.Txn:input_type -> quorum.v1.TxnRequest
-	2,  // 16: quorum.v1.KV.Put:output_type -> quorum.v1.PutResponse
-	4,  // 17: quorum.v1.KV.Get:output_type -> quorum.v1.GetResponse
-	6,  // 18: quorum.v1.KV.Delete:output_type -> quorum.v1.DeleteResponse
-	10, // 19: quorum.v1.KV.Txn:output_type -> quorum.v1.TxnResponse
-	16, // [16:20] is the sub-list for method output_type
-	12, // [12:16] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	14, // 9: quorum.v1.RangeResponse.kvs:type_name -> quorum.v1.KeyValue
+	1,  // 10: quorum.v1.InternalRaftRequest.put:type_name -> quorum.v1.PutRequest
+	5,  // 11: quorum.v1.InternalRaftRequest.delete:type_name -> quorum.v1.DeleteRequest
+	7,  // 12: quorum.v1.InternalRaftRequest.txn:type_name -> quorum.v1.TxnRequest
+	1,  // 13: quorum.v1.KV.Put:input_type -> quorum.v1.PutRequest
+	3,  // 14: quorum.v1.KV.Get:input_type -> quorum.v1.GetRequest
+	5,  // 15: quorum.v1.KV.Delete:input_type -> quorum.v1.DeleteRequest
+	7,  // 16: quorum.v1.KV.Txn:input_type -> quorum.v1.TxnRequest
+	12, // 17: quorum.v1.KV.Range:input_type -> quorum.v1.RangeRequest
+	2,  // 18: quorum.v1.KV.Put:output_type -> quorum.v1.PutResponse
+	4,  // 19: quorum.v1.KV.Get:output_type -> quorum.v1.GetResponse
+	6,  // 20: quorum.v1.KV.Delete:output_type -> quorum.v1.DeleteResponse
+	10, // 21: quorum.v1.KV.Txn:output_type -> quorum.v1.TxnResponse
+	13, // 22: quorum.v1.KV.Range:output_type -> quorum.v1.RangeResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_quorum_v1_kv_proto_init() }
@@ -942,7 +1132,7 @@ func file_quorum_v1_kv_proto_init() {
 		(*OperationResponse_Put)(nil),
 		(*OperationResponse_Delete)(nil),
 	}
-	file_quorum_v1_kv_proto_msgTypes[11].OneofWrappers = []any{
+	file_quorum_v1_kv_proto_msgTypes[14].OneofWrappers = []any{
 		(*InternalRaftRequest_Put)(nil),
 		(*InternalRaftRequest_Delete)(nil),
 		(*InternalRaftRequest_Txn)(nil),
@@ -953,7 +1143,7 @@ func file_quorum_v1_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quorum_v1_kv_proto_rawDesc), len(file_quorum_v1_kv_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

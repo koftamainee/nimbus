@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -125,7 +126,24 @@ func (s *KVServer) Txn(ctx context.Context, req *quorumv1.TxnRequest) (*quorumv1
 		return nil, err
 	}
 
-	return &quorumv1.TxnResponse{Revision: s.store.Revision()}, nil
+	succeeded, responses := s.store.LastTxnResult()
+	return &quorumv1.TxnResponse{
+		Succeeded: succeeded,
+		Responses: responses,
+		Revision:  s.store.Revision(),
+	}, nil
+}
+
+func (s *KVServer) Range(ctx context.Context, req *quorumv1.RangeRequest) (*quorumv1.RangeResponse, error) {
+	if err := s.r.ReadIndex(ctx); err != nil {
+		if notLeader, ok := errors.AsType[raft.ErrNotLeader](err); ok {
+			return nil, status.Errorf(codes.Unavailable, "leader: %s", notLeader.LeaderID)
+		}
+		return nil, err
+	}
+
+	kvs, more := s.store.Range(string(req.Key), string(req.RangeEnd), req.Limit)
+	return &quorumv1.RangeResponse{Kvs: kvs, More: more}, nil
 }
 
 type WatchServer struct {
@@ -139,5 +157,35 @@ func NewWatchServer(r *raft.Raft, st *store.Store) *WatchServer {
 }
 
 func (s *WatchServer) Watch(req *quorumv1.WatchRequest, stream quorumv1.Watch_WatchServer) error {
-	return status.Error(codes.Unimplemented, "watch not yet implemented")
+	rev := req.StartRevision
+	if rev == 0 {
+		rev = s.store.Revision() + 1
+	}
+	key := string(req.Key)
+
+	events := s.store.EventsSince(rev, key)
+	if len(events) > 0 {
+		if err := stream.Send(&quorumv1.WatchResponse{Events: events}); err != nil {
+			return err
+		}
+		rev = events[len(events)-1].Revision + 1
+	}
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
+			events := s.store.EventsSince(rev, key)
+			if len(events) > 0 {
+				if err := stream.Send(&quorumv1.WatchResponse{Events: events}); err != nil {
+					return err
+				}
+				rev = events[len(events)-1].Revision + 1
+			}
+		}
+	}
 }

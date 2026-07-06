@@ -23,6 +23,7 @@ const (
 	KV_Get_FullMethodName    = "/quorum.v1.KV/Get"
 	KV_Delete_FullMethodName = "/quorum.v1.KV/Delete"
 	KV_Txn_FullMethodName    = "/quorum.v1.KV/Txn"
+	KV_Range_FullMethodName  = "/quorum.v1.KV/Range"
 )
 
 // KVClient is the client API for KV service.
@@ -33,6 +34,7 @@ type KVClient interface {
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
 	Txn(ctx context.Context, in *TxnRequest, opts ...grpc.CallOption) (*TxnResponse, error)
+	Range(ctx context.Context, in *RangeRequest, opts ...grpc.CallOption) (*RangeResponse, error)
 }
 
 type kVClient struct {
@@ -83,6 +85,16 @@ func (c *kVClient) Txn(ctx context.Context, in *TxnRequest, opts ...grpc.CallOpt
 	return out, nil
 }
 
+func (c *kVClient) Range(ctx context.Context, in *RangeRequest, opts ...grpc.CallOption) (*RangeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RangeResponse)
+	err := c.cc.Invoke(ctx, KV_Range_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KVServer is the server API for KV service.
 // All implementations must embed UnimplementedKVServer
 // for forward compatibility.
@@ -91,6 +103,7 @@ type KVServer interface {
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 	Txn(context.Context, *TxnRequest) (*TxnResponse, error)
+	Range(context.Context, *RangeRequest) (*RangeResponse, error)
 	mustEmbedUnimplementedKVServer()
 }
 
@@ -112,6 +125,9 @@ func (UnimplementedKVServer) Delete(context.Context, *DeleteRequest) (*DeleteRes
 }
 func (UnimplementedKVServer) Txn(context.Context, *TxnRequest) (*TxnResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Txn not implemented")
+}
+func (UnimplementedKVServer) Range(context.Context, *RangeRequest) (*RangeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Range not implemented")
 }
 func (UnimplementedKVServer) mustEmbedUnimplementedKVServer() {}
 func (UnimplementedKVServer) testEmbeddedByValue()            {}
@@ -206,6 +222,24 @@ func _KV_Txn_Handler(srv interface{}, ctx context.Context, dec func(interface{})
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KV_Range_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVServer).Range(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KV_Range_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVServer).Range(ctx, req.(*RangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KV_ServiceDesc is the grpc.ServiceDesc for KV service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -228,6 +262,10 @@ var KV_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Txn",
 			Handler:    _KV_Txn_Handler,
+		},
+		{
+			MethodName: "Range",
+			Handler:    _KV_Range_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

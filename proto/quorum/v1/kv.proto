@@ -8,6 +8,7 @@ service KV {
     rpc Get(GetRequest) returns (GetResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
     rpc Txn(TxnRequest) returns (TxnResponse);
+    rpc Range(RangeRequest) returns (RangeResponse);
 }
 
 message PutRequest {
@@ -73,6 +74,23 @@ message OperationResponse {
         PutResponse put = 1;
         DeleteResponse delete = 2;
     }
+}
+
+message RangeRequest {
+    bytes key = 1;
+    bytes range_end = 2;
+    int64 limit = 3;
+}
+
+message RangeResponse {
+    repeated KeyValue kvs = 1;
+    bool more = 2;
+}
+
+message KeyValue {
+    bytes key = 1;
+    bytes value = 2;
+    int64 revision = 3;
 }
 
 message InternalRaftRequest {

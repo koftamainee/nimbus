@@ -176,7 +176,6 @@ func (r *Raft) Run() {
 	r.mu.Lock()
 	r.electionTimer = time.NewTimer(0)
 	r.heartbeatTimer = time.NewTimer(0)
-	// election timer starts now
 	if !r.electionTimer.Stop() {
 		select {
 		case <-r.electionTimer.C:
@@ -239,7 +238,6 @@ func (r *Raft) applyCommitted() {
 	r.mu.Unlock()
 }
 
-// Must be called with r.mu held.
 func (r *Raft) clearPending() {
 	n := len(r.pending)
 	for idx, ch := range r.pending {
@@ -415,7 +413,6 @@ func (r *Raft) Propose(ctx context.Context, command []byte) error {
 	return nil
 }
 
-// ReadIndex проверяет что нода всё ещё лидер и все коммиты видны.
 func (r *Raft) ReadIndex(ctx context.Context) error {
 	r.mu.Lock()
 	if r.role != Leader {
@@ -427,7 +424,6 @@ func (r *Raft) ReadIndex(ctx context.Context) error {
 	term := r.currentTerm
 	r.mu.Unlock()
 
-	// single node: always quorate
 	if len(r.peers) == 0 {
 		return nil
 	}
@@ -436,7 +432,6 @@ func (r *Raft) ReadIndex(ctx context.Context) error {
 		return err
 	}
 
-	// ждём пока commitIndex догонит readIdx
 	for {
 		r.mu.Lock()
 		if r.commitIndex >= readIdx || r.role != Leader {
@@ -458,9 +453,8 @@ func (r *Raft) ReadIndex(ctx context.Context) error {
 	}
 }
 
-// heartbeatQuorum отправляет heartbeat всем пирам и ждёт кворум.
 func (r *Raft) heartbeatQuorum(ctx context.Context, term int) error {
-	need := len(r.peers)/2 + 1 // quorum включая себя
+	need := len(r.peers)/2 + 1
 	votes := make(chan struct{}, len(r.peers))
 
 	for i, peer := range r.peers {
@@ -510,7 +504,6 @@ func (r *Raft) heartbeatQuorum(ctx context.Context, term int) error {
 		}()
 	}
 
-	// ждём голоса от need-1 пиров (себя считаем)
 	for i := 0; i < need-1; i++ {
 		select {
 		case <-votes:
@@ -519,7 +512,6 @@ func (r *Raft) heartbeatQuorum(ctx context.Context, term int) error {
 		}
 	}
 
-	// финальная проверка: не упали ли мы за время сбора голосов
 	r.mu.Lock()
 	stillLeader := r.role == Leader && r.currentTerm == term
 	r.mu.Unlock()
@@ -587,7 +579,6 @@ func (r *Raft) startElection() {
 	}
 }
 
-// NOTE: Should be called with already locked mutex
 func (r *Raft) becomeLeader() {
 	r.role = Leader
 	r.leaderID = r.id
