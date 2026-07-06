@@ -47,6 +47,9 @@ func (wal *WAL) Append(entry Entry) error {
 	if _, err := wal.file.Write(data); err != nil {
 		return err
 	}
+	if _, err := wal.file.Write([]byte("\n")); err != nil {
+		return err
+	}
 	return wal.file.Sync()
 }
 
@@ -62,6 +65,7 @@ func (wal *WAL) Replay(apply func(entry Entry) error) error {
 		var entry Entry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			log.Printf("Error parsing entry from %s: %s\n", wal.file.Name(), err)
+			continue
 		}
 		err = apply(entry)
 		if err != nil {

@@ -34,13 +34,13 @@ func New(w *wal.WAL) (*Store, error) {
 }
 
 func (store *Store) Set(key string, value string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
 	err := store.wal.Append(wal.Entry{Operation: wal.OpSet, Key: key, Value: value})
 	if err != nil {
 		return err
 	}
-
-	store.mu.Lock()
-	defer store.mu.Unlock()
 
 	store.data[key] = value
 	return nil
@@ -54,13 +54,13 @@ func (store *Store) Get(key string) (string, bool) {
 }
 
 func (store *Store) Delete(key string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
 	err := store.wal.Append(wal.Entry{Operation: wal.OpDel, Key: key})
 	if err != nil {
 		return err
 	}
-
-	store.mu.Lock()
-	defer store.mu.Unlock()
 
 	delete(store.data, key)
 	return nil
