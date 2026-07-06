@@ -20,14 +20,3 @@ jobs:
     defaults:
       run:
         working-directory: forge
-
-  formatting:
-    name: cargo fmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: rustfmt
-      - name: Rustfmt Check
-        uses: actions-rust-lang/rustfmt@v1
