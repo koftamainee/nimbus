@@ -159,7 +159,7 @@ func NewWatchServer(r *raft.Raft, st *store.Store) *WatchServer {
 func (s *WatchServer) Watch(req *quorumv1.WatchRequest, stream quorumv1.Watch_WatchServer) error {
 	rev := req.StartRevision
 	if rev == 0 {
-		rev = s.store.Revision() + 1
+		rev = 1
 	}
 	key := string(req.Key)
 

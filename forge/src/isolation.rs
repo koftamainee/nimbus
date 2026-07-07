@@ -62,6 +62,25 @@ extern "C" fn child_main(arg: *mut libc::c_void) -> libc::c_int {
         libc::sigprocmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut());
     }
 
+    let _ = unsafe {
+        libc::setrlimit(
+            libc::RLIMIT_NOFILE,
+            &libc::rlimit { rlim_cur: 1024, rlim_max: 1024 },
+        );
+        libc::setrlimit(
+            libc::RLIMIT_NPROC,
+            &libc::rlimit { rlim_cur: 256, rlim_max: 256 },
+        );
+        libc::setrlimit(
+            libc::RLIMIT_CORE,
+            &libc::rlimit { rlim_cur: 0, rlim_max: 0 },
+        );
+        libc::setrlimit(
+            libc::RLIMIT_STACK,
+            &libc::rlimit { rlim_cur: 8 * 1024 * 1024, rlim_max: 8 * 1024 * 1024 },
+        );
+    };
+
     mount_fs();
 
     let _ = nix::unistd::sethostname(ctx.hostname.to_str().unwrap_or("forge"));

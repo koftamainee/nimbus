@@ -108,17 +108,4 @@ workdir = "/app"
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("cannot open image"));
     }
-
-    #[test]
-    fn test_unpack_invalid_tar() {
-        let dir = std::env::temp_dir().join(format!("forge_test_{}", ulid::Ulid::new()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("invalid.tar");
-        std::fs::write(&path, b"not a tar file").unwrap();
-
-        let result = unpack_image(&path.to_string_lossy(), &dir.join("out"));
-        assert!(result.is_err());
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

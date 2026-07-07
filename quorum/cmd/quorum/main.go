@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 
 	quorumv1 "quorum/gen/quorum/v1"
 	"quorum/internal/raft"
+	"quorum/internal/scheduler"
 	"quorum/internal/server"
 	"quorum/internal/store"
 	"quorum/internal/wal"
@@ -25,6 +28,8 @@ func main() {
 	addr := flag.String("addr", "", "listen address (e.g. :9090)")
 	initialCluster := flag.String("initial-cluster", "", "comma-separated id=addr pairs")
 	dataDir := flag.String("data-dir", "./data", "data directory")
+	httpAddr := flag.String("http-addr", ":9091", "HTTP address for image file server")
+	imageDir := flag.String("image-dir", "", "image storage directory (default: <data-dir>/images)")
 	flag.Parse()
 
 	if *id == "" || *addr == "" || *initialCluster == "" {
@@ -52,8 +57,21 @@ func main() {
 
 	r := raft.New(*id, peers, transport, st, w, logger)
 
+	if *imageDir == "" {
+		*imageDir = filepath.Join(*dataDir, "images")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	go r.Run()
 	<-r.Ready()
+
+	nm := scheduler.NewNodeManager(st)
+	go nm.Run(ctx)
+
+	sched := scheduler.New(r, st, nm)
+	go sched.Run(ctx)
 
 	lis, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -65,6 +83,16 @@ func main() {
 	quorumv1.RegisterRaftServer(gs, server.NewRaftServer(r))
 	quorumv1.RegisterKVServer(gs, server.NewKVServer(r, st))
 	quorumv1.RegisterWatchServer(gs, server.NewWatchServer(r, st))
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /images/{name}", server.ImageGetHandler(*imageDir))
+		mux.HandleFunc("PUT /images/{name}", server.ImagePutHandler(*imageDir))
+		logger.Info("HTTP file server", "addr", *httpAddr)
+		if err := http.ListenAndServe(*httpAddr, mux); err != nil {
+			logger.Error("HTTP server", "error", err)
+		}
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

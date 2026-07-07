@@ -18,7 +18,9 @@ fn main() -> anyhow::Result<()> {
         eprintln!("forge must be run as root");
         process::exit(1);
     }
-    let data_dir = std::path::Path::new(&cli.data_dir);
+    let data_dir = std::env::var("FORGE_DATA_DIR")
+        .unwrap_or(cli.data_dir);
+    let data_dir = std::path::Path::new(&data_dir);
 
     match &cli.command {
         Commands::Run {

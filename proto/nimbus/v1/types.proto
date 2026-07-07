@@ -1,0 +1,38 @@
+syntax = "proto3";
+package nimbus.v1;
+
+option go_package = "nimbus/gen/nimbus/v1;nimbusv1";
+
+message ContainerSpec {
+  string name = 1;
+  string image = 2;
+  string memory = 3;
+  double cpus = 4;
+  repeated string env = 5;
+  repeated string cmd = 6;
+  int32 replicas = 7;
+}
+
+message NodeInfo {
+  string id = 1;
+  string hostname = 2;
+  string addr = 3;
+  repeated string labels = 4;
+}
+
+message Assignment {
+  string container_name = 1;
+  ContainerSpec spec = 2;
+  string node_id = 3;
+  string status = 4;
+}
+
+message ContainerStatus {
+  string container_name = 1;
+  string node_id = 2;
+  string status = 3;
+  int64 pid = 4;
+  int32 exit_code = 5;
+  string started_at = 6;
+  string finished_at = 7;
+}
