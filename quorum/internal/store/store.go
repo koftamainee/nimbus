@@ -204,9 +204,8 @@ func (s *Store) EventsSince(rev int64, key string) []*quorumv1.Event {
 	}
 
 	out := make([]*quorumv1.Event, 0, len(s.events)-start)
-	keyBytes := []byte(key)
 	for _, e := range s.events[start:] {
-		if len(e.Key) >= len(keyBytes) && string(e.Key[:len(keyBytes)]) == key {
+		if string(e.Key) == key {
 			out = append(out, e)
 		}
 	}
