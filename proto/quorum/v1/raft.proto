@@ -6,6 +6,7 @@ option go_package = "quorum/gen/quorum/v1;quorumv1";
 service Raft {
     rpc RequestVote(VoteRequest) returns (VoteResponse);
     rpc AppendEntries(AppendRequest) returns (AppendResponse);
+    rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
 }
 
 message VoteRequest {
@@ -13,11 +14,13 @@ message VoteRequest {
     string candidate_id = 2;
     int64 last_log_index = 3;
     int64 last_log_term = 4;
+    bool pre_vote = 5;
 }
 
 message VoteResponse {
     uint64 term = 1;
     bool vote_granted = 2;
+    bool pre_vote = 3;
 }
 
 message AppendRequest {
@@ -40,4 +43,17 @@ message AppendResponse {
     bool success = 2;
     int64 conflict_term = 3;
     int64 conflict_index = 4;
+}
+
+message InstallSnapshotRequest {
+    uint64 term = 1;
+    string leader_id = 2;
+    int64 last_included_index = 3;
+    int64 last_included_term = 4;
+    bytes snapshot_data = 5;
+}
+
+message InstallSnapshotResponse {
+    uint64 term = 1;
+    bool success = 2;
 }

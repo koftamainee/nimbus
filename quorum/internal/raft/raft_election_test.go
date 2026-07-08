@@ -164,3 +164,102 @@ func TestThreeNodesElectLeader(t *testing.T) {
 		r.mu.Unlock()
 	}
 }
+
+func TestPreVoteRejectsStaleCandidate(t *testing.T) {
+	n2 := startTestNode(t, "n2", []string{"n1", "n3"}, nil)
+	n2.mu.Lock()
+	n2.log = []LogEntry{
+		{Index: 0, Term: 1, Command: []byte("x")},
+		{Index: 1, Term: 1, Command: []byte("y")},
+	}
+	n2.mu.Unlock()
+
+	resp := n2.HandleRequestVote(VoteRequest{
+		Term:         1,
+		CandidateID:  "n1",
+		LastLogIndex: 0,
+		LastLogTerm:  0,
+		PreVote:      true,
+	})
+	assert.False(t, resp.VoteGranted, "n2 should reject pre-vote from node with stale log")
+	assert.True(t, resp.PreVote)
+}
+
+func TestPreVoteGrantsForEqualLog(t *testing.T) {
+	n2 := startTestNode(t, "n2", []string{"n1", "n3"}, nil)
+
+	resp := n2.HandleRequestVote(VoteRequest{
+		Term:         0,
+		CandidateID:  "n1",
+		LastLogIndex: -1,
+		LastLogTerm:  0,
+		PreVote:      true,
+	})
+	assert.True(t, resp.VoteGranted, "n2 should grant pre-vote for equal log")
+	assert.True(t, resp.PreVote)
+}
+
+func TestPreVoteDoesNotUpdateTermOrVote(t *testing.T) {
+	n2 := startTestNode(t, "n2", []string{"n1", "n3"}, nil)
+	n2.mu.Lock()
+	n2.currentTerm = 5
+	n2.votedFor = "some-other-node"
+	n2.mu.Unlock()
+
+	resp := n2.HandleRequestVote(VoteRequest{
+		Term:         10,
+		CandidateID:  "n1",
+		LastLogIndex: -1,
+		LastLogTerm:  0,
+		PreVote:      true,
+	})
+
+	n2.mu.Lock()
+	assert.True(t, resp.VoteGranted, "n2 should grant pre-vote for equal log")
+	assert.Equal(t, 5, n2.currentTerm, "pre-vote should not update term")
+	assert.Equal(t, "some-other-node", n2.votedFor, "pre-vote should not update votedFor")
+	n2.mu.Unlock()
+}
+
+func TestPreVoteWithDisruption(t *testing.T) {
+	nodes, _ := newCluster(t, []string{"n1", "n2", "n3"})
+	time.Sleep(2 * time.Second)
+
+	leaders := 0
+	var leaderID string
+	for id, r := range nodes {
+		r.mu.Lock()
+		if r.role == Leader {
+			leaders++
+			leaderID = id
+		}
+		r.mu.Unlock()
+	}
+	require.Equal(t, 1, leaders)
+	require.NotEmpty(t, leaderID)
+
+	leader := nodes[leaderID]
+	leader.mu.Lock()
+	leader.log = append(leader.log, LogEntry{Index: 0, Term: 1, Command: []byte("data")})
+	leader.mu.Unlock()
+
+	for _, r := range nodes {
+		if r != leader {
+			r.mu.Lock()
+			r.log = append(r.log, LogEntry{Index: 0, Term: 1, Command: []byte("data")})
+			r.mu.Unlock()
+		}
+	}
+
+	transport := nodes[leaderID].transport.(*InMemoryTransport)
+	freshNode := New("n4", []string{"n1", "n2", "n3"}, nil, nil, nil, nil)
+	freshNode.transport = transport
+	transport.NodesByID["n4"] = freshNode
+
+	freshNode.mu.Lock()
+	freshNode.role = PreCandidate
+	freshNode.mu.Unlock()
+
+	ok := freshNode.runPreVote(leader.currentTerm, -1, 0)
+	assert.False(t, ok, "empty-log node should not win pre-vote against established cluster")
+}

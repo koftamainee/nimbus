@@ -27,6 +27,7 @@ type VoteRequest struct {
 	CandidateId   string                 `protobuf:"bytes,2,opt,name=candidate_id,json=candidateId,proto3" json:"candidate_id,omitempty"`
 	LastLogIndex  int64                  `protobuf:"varint,3,opt,name=last_log_index,json=lastLogIndex,proto3" json:"last_log_index,omitempty"`
 	LastLogTerm   int64                  `protobuf:"varint,4,opt,name=last_log_term,json=lastLogTerm,proto3" json:"last_log_term,omitempty"`
+	PreVote       bool                   `protobuf:"varint,5,opt,name=pre_vote,json=preVote,proto3" json:"pre_vote,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -89,10 +90,18 @@ func (x *VoteRequest) GetLastLogTerm() int64 {
 	return 0
 }
 
+func (x *VoteRequest) GetPreVote() bool {
+	if x != nil {
+		return x.PreVote
+	}
+	return false
+}
+
 type VoteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Term          uint64                 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
 	VoteGranted   bool                   `protobuf:"varint,2,opt,name=vote_granted,json=voteGranted,proto3" json:"vote_granted,omitempty"`
+	PreVote       bool                   `protobuf:"varint,3,opt,name=pre_vote,json=preVote,proto3" json:"pre_vote,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -137,6 +146,13 @@ func (x *VoteResponse) GetTerm() uint64 {
 func (x *VoteResponse) GetVoteGranted() bool {
 	if x != nil {
 		return x.VoteGranted
+	}
+	return false
+}
+
+func (x *VoteResponse) GetPreVote() bool {
+	if x != nil {
+		return x.PreVote
 	}
 	return false
 }
@@ -353,19 +369,149 @@ func (x *AppendResponse) GetConflictIndex() int64 {
 	return 0
 }
 
+type InstallSnapshotRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Term              uint64                 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
+	LeaderId          string                 `protobuf:"bytes,2,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
+	LastIncludedIndex int64                  `protobuf:"varint,3,opt,name=last_included_index,json=lastIncludedIndex,proto3" json:"last_included_index,omitempty"`
+	LastIncludedTerm  int64                  `protobuf:"varint,4,opt,name=last_included_term,json=lastIncludedTerm,proto3" json:"last_included_term,omitempty"`
+	SnapshotData      []byte                 `protobuf:"bytes,5,opt,name=snapshot_data,json=snapshotData,proto3" json:"snapshot_data,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *InstallSnapshotRequest) Reset() {
+	*x = InstallSnapshotRequest{}
+	mi := &file_quorum_v1_raft_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallSnapshotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallSnapshotRequest) ProtoMessage() {}
+
+func (x *InstallSnapshotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_raft_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallSnapshotRequest.ProtoReflect.Descriptor instead.
+func (*InstallSnapshotRequest) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_raft_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *InstallSnapshotRequest) GetTerm() uint64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *InstallSnapshotRequest) GetLeaderId() string {
+	if x != nil {
+		return x.LeaderId
+	}
+	return ""
+}
+
+func (x *InstallSnapshotRequest) GetLastIncludedIndex() int64 {
+	if x != nil {
+		return x.LastIncludedIndex
+	}
+	return 0
+}
+
+func (x *InstallSnapshotRequest) GetLastIncludedTerm() int64 {
+	if x != nil {
+		return x.LastIncludedTerm
+	}
+	return 0
+}
+
+func (x *InstallSnapshotRequest) GetSnapshotData() []byte {
+	if x != nil {
+		return x.SnapshotData
+	}
+	return nil
+}
+
+type InstallSnapshotResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          uint64                 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InstallSnapshotResponse) Reset() {
+	*x = InstallSnapshotResponse{}
+	mi := &file_quorum_v1_raft_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InstallSnapshotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InstallSnapshotResponse) ProtoMessage() {}
+
+func (x *InstallSnapshotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_raft_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InstallSnapshotResponse.ProtoReflect.Descriptor instead.
+func (*InstallSnapshotResponse) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_raft_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *InstallSnapshotResponse) GetTerm() uint64 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *InstallSnapshotResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 var File_quorum_v1_raft_proto protoreflect.FileDescriptor
 
 const file_quorum_v1_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x14quorum/v1/raft.proto\x12\tquorum.v1\"\x8e\x01\n" +
+	"\x14quorum/v1/raft.proto\x12\tquorum.v1\"\xa9\x01\n" +
 	"\vVoteRequest\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\x04R\x04term\x12!\n" +
 	"\fcandidate_id\x18\x02 \x01(\tR\vcandidateId\x12$\n" +
 	"\x0elast_log_index\x18\x03 \x01(\x03R\flastLogIndex\x12\"\n" +
-	"\rlast_log_term\x18\x04 \x01(\x03R\vlastLogTerm\"E\n" +
+	"\rlast_log_term\x18\x04 \x01(\x03R\vlastLogTerm\x12\x19\n" +
+	"\bpre_vote\x18\x05 \x01(\bR\apreVote\"`\n" +
 	"\fVoteResponse\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\x04R\x04term\x12!\n" +
-	"\fvote_granted\x18\x02 \x01(\bR\vvoteGranted\"\xde\x01\n" +
+	"\fvote_granted\x18\x02 \x01(\bR\vvoteGranted\x12\x19\n" +
+	"\bpre_vote\x18\x03 \x01(\bR\apreVote\"\xde\x01\n" +
 	"\rAppendRequest\x12\x12\n" +
 	"\x04term\x18\x01 \x01(\x04R\x04term\x12\x1b\n" +
 	"\tleader_id\x18\x02 \x01(\tR\bleaderId\x12$\n" +
@@ -381,10 +527,20 @@ const file_quorum_v1_raft_proto_rawDesc = "" +
 	"\x04term\x18\x01 \x01(\x04R\x04term\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12#\n" +
 	"\rconflict_term\x18\x03 \x01(\x03R\fconflictTerm\x12%\n" +
-	"\x0econflict_index\x18\x04 \x01(\x03R\rconflictIndex2\x8c\x01\n" +
+	"\x0econflict_index\x18\x04 \x01(\x03R\rconflictIndex\"\xcc\x01\n" +
+	"\x16InstallSnapshotRequest\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x04R\x04term\x12\x1b\n" +
+	"\tleader_id\x18\x02 \x01(\tR\bleaderId\x12.\n" +
+	"\x13last_included_index\x18\x03 \x01(\x03R\x11lastIncludedIndex\x12,\n" +
+	"\x12last_included_term\x18\x04 \x01(\x03R\x10lastIncludedTerm\x12#\n" +
+	"\rsnapshot_data\x18\x05 \x01(\fR\fsnapshotData\"G\n" +
+	"\x17InstallSnapshotResponse\x12\x12\n" +
+	"\x04term\x18\x01 \x01(\x04R\x04term\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess2\xe6\x01\n" +
 	"\x04Raft\x12>\n" +
 	"\vRequestVote\x12\x16.quorum.v1.VoteRequest\x1a\x17.quorum.v1.VoteResponse\x12D\n" +
-	"\rAppendEntries\x12\x18.quorum.v1.AppendRequest\x1a\x19.quorum.v1.AppendResponseB\x1fZ\x1dquorum/gen/quorum/v1;quorumv1b\x06proto3"
+	"\rAppendEntries\x12\x18.quorum.v1.AppendRequest\x1a\x19.quorum.v1.AppendResponse\x12X\n" +
+	"\x0fInstallSnapshot\x12!.quorum.v1.InstallSnapshotRequest\x1a\".quorum.v1.InstallSnapshotResponseB\x1fZ\x1dquorum/gen/quorum/v1;quorumv1b\x06proto3"
 
 var (
 	file_quorum_v1_raft_proto_rawDescOnce sync.Once
@@ -398,22 +554,26 @@ func file_quorum_v1_raft_proto_rawDescGZIP() []byte {
 	return file_quorum_v1_raft_proto_rawDescData
 }
 
-var file_quorum_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_quorum_v1_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_quorum_v1_raft_proto_goTypes = []any{
-	(*VoteRequest)(nil),    // 0: quorum.v1.VoteRequest
-	(*VoteResponse)(nil),   // 1: quorum.v1.VoteResponse
-	(*AppendRequest)(nil),  // 2: quorum.v1.AppendRequest
-	(*LogEntry)(nil),       // 3: quorum.v1.LogEntry
-	(*AppendResponse)(nil), // 4: quorum.v1.AppendResponse
+	(*VoteRequest)(nil),             // 0: quorum.v1.VoteRequest
+	(*VoteResponse)(nil),            // 1: quorum.v1.VoteResponse
+	(*AppendRequest)(nil),           // 2: quorum.v1.AppendRequest
+	(*LogEntry)(nil),                // 3: quorum.v1.LogEntry
+	(*AppendResponse)(nil),          // 4: quorum.v1.AppendResponse
+	(*InstallSnapshotRequest)(nil),  // 5: quorum.v1.InstallSnapshotRequest
+	(*InstallSnapshotResponse)(nil), // 6: quorum.v1.InstallSnapshotResponse
 }
 var file_quorum_v1_raft_proto_depIdxs = []int32{
 	3, // 0: quorum.v1.AppendRequest.entries:type_name -> quorum.v1.LogEntry
 	0, // 1: quorum.v1.Raft.RequestVote:input_type -> quorum.v1.VoteRequest
 	2, // 2: quorum.v1.Raft.AppendEntries:input_type -> quorum.v1.AppendRequest
-	1, // 3: quorum.v1.Raft.RequestVote:output_type -> quorum.v1.VoteResponse
-	4, // 4: quorum.v1.Raft.AppendEntries:output_type -> quorum.v1.AppendResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	5, // 3: quorum.v1.Raft.InstallSnapshot:input_type -> quorum.v1.InstallSnapshotRequest
+	1, // 4: quorum.v1.Raft.RequestVote:output_type -> quorum.v1.VoteResponse
+	4, // 5: quorum.v1.Raft.AppendEntries:output_type -> quorum.v1.AppendResponse
+	6, // 6: quorum.v1.Raft.InstallSnapshot:output_type -> quorum.v1.InstallSnapshotResponse
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -430,7 +590,7 @@ func file_quorum_v1_raft_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quorum_v1_raft_proto_rawDesc), len(file_quorum_v1_raft_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

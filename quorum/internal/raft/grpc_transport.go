@@ -6,10 +6,25 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 
 	quorumv1 "quorum/gen/quorum/v1"
 )
+
+func grpcDialOptions() []grpc.DialOption {
+	return []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  50 * time.Millisecond,
+				Multiplier: 1.5,
+				Jitter:     0.2,
+				MaxDelay:   3 * time.Second,
+			},
+		}),
+	}
+}
 
 type GRPCTransport struct {
 	mu    sync.Mutex
@@ -53,7 +68,7 @@ func (t *GRPCTransport) getConn(peerID string) (*grpc.ClientConn, error) {
 		return nil, nil
 	}
 
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpcDialOptions()...)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +91,7 @@ func (t *GRPCTransport) RequestVote(peerID string, req VoteRequest) (VoteRespons
 		CandidateId:  req.CandidateID,
 		LastLogIndex: int64(req.LastLogIndex),
 		LastLogTerm:  int64(req.LastLogTerm),
+		PreVote:      req.PreVote,
 	}
 
 	ctx, cancel := rpcContext()
@@ -88,6 +104,7 @@ func (t *GRPCTransport) RequestVote(peerID string, req VoteRequest) (VoteRespons
 	return VoteResponse{
 		Term:        int(pbResp.Term),
 		VoteGranted: pbResp.VoteGranted,
+		PreVote:     pbResp.PreVote,
 	}, nil
 }
 
@@ -118,6 +135,33 @@ func (t *GRPCTransport) AppendEntries(peerID string, req AppendRequest) (AppendR
 		Success:       pbResp.Success,
 		ConflictTerm:  int(pbResp.ConflictTerm),
 		ConflictIndex: int(pbResp.ConflictIndex),
+	}, nil
+}
+
+func (t *GRPCTransport) InstallSnapshot(peerID string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	conn, err := t.getConn(peerID)
+	if err != nil || conn == nil {
+		return InstallSnapshotResponse{}, err
+	}
+
+	pbReq := &quorumv1.InstallSnapshotRequest{
+		Term:              uint64(req.Term),
+		LeaderId:          req.LeaderID,
+		LastIncludedIndex: int64(req.LastIncludedIndex),
+		LastIncludedTerm:  int64(req.LastIncludedTerm),
+		SnapshotData:      req.SnapshotData,
+	}
+
+	ctx, cancel := rpcContext()
+	defer cancel()
+	pbResp, err := quorumv1.NewRaftClient(conn).InstallSnapshot(ctx, pbReq)
+	if err != nil {
+		return InstallSnapshotResponse{}, err
+	}
+
+	return InstallSnapshotResponse{
+		Term:    int(pbResp.Term),
+		Success: pbResp.Success,
 	}, nil
 }
 

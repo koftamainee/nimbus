@@ -29,10 +29,12 @@ func (s *RaftServer) RequestVote(ctx context.Context, req *quorumv1.VoteRequest)
 		CandidateID:  req.CandidateId,
 		LastLogIndex: int(req.LastLogIndex),
 		LastLogTerm:  int(req.LastLogTerm),
+		PreVote:      req.PreVote,
 	})
 	return &quorumv1.VoteResponse{
 		Term:        uint64(resp.Term),
 		VoteGranted: resp.VoteGranted,
+		PreVote:     resp.PreVote,
 	}, nil
 }
 
@@ -144,6 +146,20 @@ func (s *KVServer) Range(ctx context.Context, req *quorumv1.RangeRequest) (*quor
 
 	kvs, more := s.store.Range(string(req.Key), string(req.RangeEnd), req.Limit)
 	return &quorumv1.RangeResponse{Kvs: kvs, More: more}, nil
+}
+
+func (s *RaftServer) InstallSnapshot(ctx context.Context, req *quorumv1.InstallSnapshotRequest) (*quorumv1.InstallSnapshotResponse, error) {
+	resp := s.r.HandleInstallSnapshot(raft.InstallSnapshotRequest{
+		Term:              int(req.Term),
+		LeaderID:          req.LeaderId,
+		LastIncludedIndex: int(req.LastIncludedIndex),
+		LastIncludedTerm:  int(req.LastIncludedTerm),
+		SnapshotData:      req.SnapshotData,
+	})
+	return &quorumv1.InstallSnapshotResponse{
+		Term:    uint64(resp.Term),
+		Success: resp.Success,
+	}, nil
 }
 
 type WatchServer struct {

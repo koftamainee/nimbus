@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -50,7 +51,18 @@ func main() {
 		transport.SetPeer(p, a)
 	}
 
+	snapshotter := raft.NewFileSnapshotter(filepath.Join(*dataDir, "snapshots"))
+
 	r := raft.New(*id, peers, transport, st, w, logger)
+	r.SetSnapshotter(snapshotter)
+
+	go func() {
+		for range time.NewTicker(1 * time.Minute).C {
+			if err := r.TakeSnapshot(); err != nil {
+				logger.Warn("failed to take snapshot", "err", err)
+			}
+		}
+	}()
 
 	go r.Run()
 	<-r.Ready()

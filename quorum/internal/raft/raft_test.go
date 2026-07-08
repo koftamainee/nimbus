@@ -102,3 +102,11 @@ func (m *recordingSM) Applied() [][]byte {
 	copy(res, m.cmds)
 	return res
 }
+
+func (m *recordingSM) Snapshot() ([]byte, error) {
+	return []byte("snapshot"), nil
+}
+
+func (m *recordingSM) Restore(_ []byte) error {
+	return nil
+}

@@ -22,3 +22,11 @@ func (t InMemoryTransport) AppendEntries(peerID string, req AppendRequest) (Appe
 	return node.HandleAppendEntries(req), nil
 
 }
+
+func (t InMemoryTransport) InstallSnapshot(peerID string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	node, ok := t.NodesByID[peerID]
+	if !ok {
+		return InstallSnapshotResponse{}, errors.New("node not found")
+	}
+	return node.HandleInstallSnapshot(req), nil
+}

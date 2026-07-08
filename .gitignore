@@ -1,3 +1,11 @@
-/.idea/
-/target/
-/build/
+.idea/
+target/
+build/
+plan/
+quorum/quorum-db
+quorum/quorum-api
+quorum/qctl
+quorum/quorum-scheduler
+*.out
+*.test
+*.prof

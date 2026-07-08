@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -129,6 +130,96 @@ func TestConcurrentAppend(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 	require.Equal(t, 100, count)
+}
+
+func TestTruncate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.wal")
+	w, err := Open(path)
+	require.NoError(t, err)
+
+	for _, data := range [][]byte{
+		[]byte(`{"Index":0,"Term":1,"Command":"Y3Jh"}`),
+		[]byte(`{"Index":1,"Term":1,"Command":"Y3Jh"}`),
+		[]byte(`{"Index":2,"Term":1,"Command":"Y3Jh"}`),
+		[]byte(`{"Index":3,"Term":1,"Command":"Y3Jh"}`),
+		[]byte(`{"Index":4,"Term":1,"Command":"Y3Jh"}`),
+	} {
+		require.NoError(t, w.Append(data))
+	}
+
+	count, err := w.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 5, count)
+
+	err = w.Truncate(func(data []byte) bool {
+		var entry struct{ Index int }
+		if err := json.Unmarshal(data, &entry); err != nil {
+			return false
+		}
+		return entry.Index > 2
+	})
+	require.NoError(t, err)
+
+	count, err = w.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	var indices []int
+	apply := func(data []byte) error {
+		var entry struct{ Index int }
+		if err := json.Unmarshal(data, &entry); err != nil {
+			return err
+		}
+		indices = append(indices, entry.Index)
+		return nil
+	}
+	err = w.Replay(apply)
+	require.NoError(t, err)
+	assert.Equal(t, []int{3, 4}, indices)
+
+	err = w.Close()
+	require.NoError(t, err)
+}
+
+func TestTruncateKeepAll(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.wal")
+	w, err := Open(path)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Append([]byte("a")))
+	require.NoError(t, w.Append([]byte("b")))
+
+	err = w.Truncate(func(data []byte) bool {
+		return true
+	})
+	require.NoError(t, err)
+
+	count, err := w.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	err = w.Close()
+	require.NoError(t, err)
+}
+
+func TestTruncateKeepNone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.wal")
+	w, err := Open(path)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Append([]byte("a")))
+
+	err = w.Truncate(func(data []byte) bool {
+		return false
+	})
+	require.NoError(t, err)
+
+	count, err := w.Count()
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	err = w.Close()
+	require.NoError(t, err)
 }
 
 func TestReplayAllLines(t *testing.T) {

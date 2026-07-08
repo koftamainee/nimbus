@@ -224,3 +224,45 @@ func (s *Store) Revision() int64 {
 	defer s.mu.RUnlock()
 	return s.revision
 }
+
+func (s *Store) Snapshot() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	kvs := make([]*quorumv1.KeyValue, 0, len(s.data))
+	for k, v := range s.data {
+		kvs = append(kvs, &quorumv1.KeyValue{
+			Key:      []byte(k),
+			Value:    []byte(v.Value),
+			Revision: v.Revision,
+		})
+	}
+
+	snap := &quorumv1.Snapshot{
+		Revision: s.revision,
+		Kvs:      kvs,
+	}
+
+	return proto.Marshal(snap)
+}
+
+func (s *Store) Restore(data []byte) error {
+	var snap quorumv1.Snapshot
+	if err := proto.Unmarshal(data, &snap); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.data = make(map[string]*Value, len(snap.Kvs))
+	for _, kv := range snap.Kvs {
+		s.data[string(kv.Key)] = &Value{
+			Value:    string(kv.Value),
+			Revision: kv.Revision,
+		}
+	}
+	s.revision = snap.Revision
+
+	return nil
+}

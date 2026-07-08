@@ -362,6 +362,64 @@ func TestEventsSinceTxn(t *testing.T) {
 	require.Equal(t, "y", string(events[2].Key))
 }
 
+func TestSnapshotRestore(t *testing.T) {
+	s := New()
+	s.Apply(putCmd("a", "1"))
+	s.Apply(putCmd("b", "2"))
+	s.Apply(putCmd("c", "3"))
+
+	data, err := s.Snapshot()
+	require.NoError(t, err)
+
+	s2 := New()
+	err = s2.Restore(data)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), s2.Revision())
+
+	val, _, ok := s2.Get("a")
+	require.True(t, ok)
+	require.Equal(t, "1", val)
+	val, _, ok = s2.Get("b")
+	require.True(t, ok)
+	require.Equal(t, "2", val)
+	val, _, ok = s2.Get("c")
+	require.True(t, ok)
+	require.Equal(t, "3", val)
+
+}
+
+func TestSnapshotRestoreEmpty(t *testing.T) {
+	s := New()
+	data, err := s.Snapshot()
+	require.NoError(t, err)
+
+	s2 := New()
+	err = s2.Restore(data)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), s2.Revision())
+}
+
+func TestRestoreOverwrites(t *testing.T) {
+	s := New()
+	s.Apply(putCmd("a", "1"))
+	s.Apply(putCmd("b", "2"))
+	data, err := s.Snapshot()
+	require.NoError(t, err)
+
+	s2 := New()
+	s2.Apply(putCmd("x", "99"))
+	err = s2.Restore(data)
+	require.NoError(t, err)
+
+	_, _, ok := s2.Get("x")
+	require.False(t, ok, "restore should overwrite existing data")
+
+	val, _, ok := s2.Get("a")
+	require.True(t, ok)
+	require.Equal(t, "1", val)
+	require.Equal(t, int64(2), s2.Revision())
+}
+
 func TestEventsSincePrefixMatch(t *testing.T) {
 	s := New()
 	s.Apply(putCmd("/containers/nginx/spec", "nginx"))

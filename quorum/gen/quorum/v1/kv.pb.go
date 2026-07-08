@@ -983,6 +983,58 @@ func (*InternalRaftRequest_Delete) isInternalRaftRequest_Cmd() {}
 
 func (*InternalRaftRequest_Txn) isInternalRaftRequest_Cmd() {}
 
+type Snapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Revision      int64                  `protobuf:"varint,1,opt,name=revision,proto3" json:"revision,omitempty"`
+	Kvs           []*KeyValue            `protobuf:"bytes,2,rep,name=kvs,proto3" json:"kvs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Snapshot) Reset() {
+	*x = Snapshot{}
+	mi := &file_quorum_v1_kv_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Snapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Snapshot) ProtoMessage() {}
+
+func (x *Snapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_quorum_v1_kv_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Snapshot.ProtoReflect.Descriptor instead.
+func (*Snapshot) Descriptor() ([]byte, []int) {
+	return file_quorum_v1_kv_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *Snapshot) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *Snapshot) GetKvs() []*KeyValue {
+	if x != nil {
+		return x.Kvs
+	}
+	return nil
+}
+
 var File_quorum_v1_kv_proto protoreflect.FileDescriptor
 
 const file_quorum_v1_kv_proto_rawDesc = "" +
@@ -1048,7 +1100,10 @@ const file_quorum_v1_kv_proto_rawDesc = "" +
 	" \x01(\v2\x15.quorum.v1.PutRequestH\x00R\x03put\x122\n" +
 	"\x06delete\x18\v \x01(\v2\x18.quorum.v1.DeleteRequestH\x00R\x06delete\x12)\n" +
 	"\x03txn\x18\f \x01(\v2\x15.quorum.v1.TxnRequestH\x00R\x03txnB\x05\n" +
-	"\x03cmd2\xa1\x02\n" +
+	"\x03cmd\"M\n" +
+	"\bSnapshot\x12\x1a\n" +
+	"\brevision\x18\x01 \x01(\x03R\brevision\x12%\n" +
+	"\x03kvs\x18\x02 \x03(\v2\x13.quorum.v1.KeyValueR\x03kvs2\xa1\x02\n" +
 	"\x02KV\x124\n" +
 	"\x03Put\x12\x15.quorum.v1.PutRequest\x1a\x16.quorum.v1.PutResponse\x124\n" +
 	"\x03Get\x12\x15.quorum.v1.GetRequest\x1a\x16.quorum.v1.GetResponse\x12=\n" +
@@ -1069,7 +1124,7 @@ func file_quorum_v1_kv_proto_rawDescGZIP() []byte {
 }
 
 var file_quorum_v1_kv_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_quorum_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_quorum_v1_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_quorum_v1_kv_proto_goTypes = []any{
 	(Compare_CompareType)(0),    // 0: quorum.v1.Compare.CompareType
 	(*PutRequest)(nil),          // 1: quorum.v1.PutRequest
@@ -1087,6 +1142,7 @@ var file_quorum_v1_kv_proto_goTypes = []any{
 	(*RangeResponse)(nil),       // 13: quorum.v1.RangeResponse
 	(*KeyValue)(nil),            // 14: quorum.v1.KeyValue
 	(*InternalRaftRequest)(nil), // 15: quorum.v1.InternalRaftRequest
+	(*Snapshot)(nil),            // 16: quorum.v1.Snapshot
 }
 var file_quorum_v1_kv_proto_depIdxs = []int32{
 	8,  // 0: quorum.v1.TxnRequest.compare:type_name -> quorum.v1.Compare
@@ -1102,21 +1158,22 @@ var file_quorum_v1_kv_proto_depIdxs = []int32{
 	1,  // 10: quorum.v1.InternalRaftRequest.put:type_name -> quorum.v1.PutRequest
 	5,  // 11: quorum.v1.InternalRaftRequest.delete:type_name -> quorum.v1.DeleteRequest
 	7,  // 12: quorum.v1.InternalRaftRequest.txn:type_name -> quorum.v1.TxnRequest
-	1,  // 13: quorum.v1.KV.Put:input_type -> quorum.v1.PutRequest
-	3,  // 14: quorum.v1.KV.Get:input_type -> quorum.v1.GetRequest
-	5,  // 15: quorum.v1.KV.Delete:input_type -> quorum.v1.DeleteRequest
-	7,  // 16: quorum.v1.KV.Txn:input_type -> quorum.v1.TxnRequest
-	12, // 17: quorum.v1.KV.Range:input_type -> quorum.v1.RangeRequest
-	2,  // 18: quorum.v1.KV.Put:output_type -> quorum.v1.PutResponse
-	4,  // 19: quorum.v1.KV.Get:output_type -> quorum.v1.GetResponse
-	6,  // 20: quorum.v1.KV.Delete:output_type -> quorum.v1.DeleteResponse
-	10, // 21: quorum.v1.KV.Txn:output_type -> quorum.v1.TxnResponse
-	13, // 22: quorum.v1.KV.Range:output_type -> quorum.v1.RangeResponse
-	18, // [18:23] is the sub-list for method output_type
-	13, // [13:18] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	14, // 13: quorum.v1.Snapshot.kvs:type_name -> quorum.v1.KeyValue
+	1,  // 14: quorum.v1.KV.Put:input_type -> quorum.v1.PutRequest
+	3,  // 15: quorum.v1.KV.Get:input_type -> quorum.v1.GetRequest
+	5,  // 16: quorum.v1.KV.Delete:input_type -> quorum.v1.DeleteRequest
+	7,  // 17: quorum.v1.KV.Txn:input_type -> quorum.v1.TxnRequest
+	12, // 18: quorum.v1.KV.Range:input_type -> quorum.v1.RangeRequest
+	2,  // 19: quorum.v1.KV.Put:output_type -> quorum.v1.PutResponse
+	4,  // 20: quorum.v1.KV.Get:output_type -> quorum.v1.GetResponse
+	6,  // 21: quorum.v1.KV.Delete:output_type -> quorum.v1.DeleteResponse
+	10, // 22: quorum.v1.KV.Txn:output_type -> quorum.v1.TxnResponse
+	13, // 23: quorum.v1.KV.Range:output_type -> quorum.v1.RangeResponse
+	19, // [19:24] is the sub-list for method output_type
+	14, // [14:19] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_quorum_v1_kv_proto_init() }
@@ -1143,7 +1200,7 @@ func file_quorum_v1_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quorum_v1_kv_proto_rawDesc), len(file_quorum_v1_kv_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
