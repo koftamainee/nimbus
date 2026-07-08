@@ -43,7 +43,7 @@ pub fn read_logs_buf(
     let path = log_path(data_dir, name);
     let file = fs::File::open(&path)
         .map_err(|e| anyhow::anyhow!("cannot open log for {}: {}", name, e))?;
-    let mut reader = BufReader::new(file);
+    let reader = BufReader::new(file);
 
     let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
     let lines = if let Some(n) = tail {
