@@ -1,11 +1,8 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "forge", version, about = "Container runtime")]
+#[command(name = "forge", version, about = "Container runtime CLI")]
 pub struct Cli {
-    #[arg(long, default_value = "/var/lib/forge", global = true)]
-    pub data_dir: String,
-
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -14,7 +11,7 @@ pub struct Cli {
 pub enum Commands {
     #[command(about = "Run a container from an image")]
     Run {
-        #[arg(long, help = "Path to image tar file (.tar or .tar.gz)")]
+        #[arg(long, help = "Image name or path")]
         image: String,
         #[arg(long, help = "Container name")]
         name: String,

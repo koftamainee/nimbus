@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::Context;
 use chrono::Utc;
 use clap::Parser;
-use tonic::transport::{Channel, Endpoint};
-
-use forge::container;
+use hyper_util::rt::TokioIo;
+use tonic::transport::{Channel, Endpoint, Uri};
+use tonic::Code;
+use tower::service_fn;
+use tokio::net::UnixStream;
 
 pub mod quorum {
     pub mod v1 {
@@ -14,10 +15,19 @@ pub mod quorum {
     }
 }
 
+pub mod nimbus {
+    pub mod v1 {
+        tonic::include_proto!("nimbus.v1");
+    }
+}
+
 use quorum::v1::kv_client::KvClient;
 use quorum::v1::watch_client::WatchClient;
 use quorum::v1::{PutRequest, WatchRequest};
 use quorum::v1::event::EventType;
+
+use nimbus::v1::forge_runtime_client::ForgeRuntimeClient;
+use nimbus::v1::{KillRequest, RemoveRequest, RunRequest, StopRequest};
 
 type Kv = KvClient<Channel>;
 type Watch = WatchClient<Channel>;
@@ -28,26 +38,22 @@ struct AgentCli {
     #[arg(long)]
     node_id: String,
 
-    #[arg(long, default_value = "http://127.0.0.1:9090")]
-    quorum_addr: String,
+    #[arg(long, default_value = "")]
+    db_cluster: String,
 
-    #[arg(long, default_value = "/var/lib/forge")]
-    data_dir: String,
-
-    #[arg(long, default_value = "http://127.0.0.1:9091")]
-    image_addr: String,
+    #[arg(long, default_value = "/var/run/forge.sock")]
+    forge_socket: String,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = AgentCli::parse();
-    let data_dir = PathBuf::from(&cli.data_dir);
 
-    let endpoint = Endpoint::from_shared(cli.quorum_addr.clone())?
-        .connect_timeout(Duration::from_secs(5));
+    let cluster = parse_cluster(&cli.db_cluster);
 
-    let mut kv_client: Kv = KvClient::connect(endpoint.clone()).await
-        .context("connect to quorum kv")?;
+    let channel = connect_to_leader(&cluster).await?;
+
+    let mut kv_client: Kv = KvClient::new(channel.clone());
 
     let node_info = serde_json::json!({
         "id": cli.node_id,
@@ -59,13 +65,13 @@ async fn main() -> anyhow::Result<()> {
         value: node_info.to_string().into_bytes(),
     }).await?;
 
-    let kv_client_hb: Kv = KvClient::connect(endpoint.clone()).await?;
+    let kv_client_hb: Kv = KvClient::new(channel.clone());
     let node_id_hb = cli.node_id.clone();
     tokio::spawn(async move {
         heartbeat_loop(kv_client_hb, &node_id_hb).await;
     });
 
-    let mut watch_client: Watch = WatchClient::connect(endpoint).await?;
+    let mut watch_client: Watch = WatchClient::new(channel.clone());
     let prefix = format!("/nodes/{}/assignments/", cli.node_id);
 
     eprintln!("agent {} listening for assignments at {}", cli.node_id, prefix);
@@ -75,41 +81,110 @@ async fn main() -> anyhow::Result<()> {
             &mut watch_client,
             &mut kv_client,
             &prefix,
-            &data_dir,
-            &cli.image_addr,
+            &cli.forge_socket,
             &cli.node_id,
         )
         .await
         {
             Ok(()) => {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                watch_client = WatchClient::connect(
-                    Endpoint::from_shared(cli.quorum_addr.clone())?
-                        .connect_timeout(Duration::from_secs(5)),
-                )
-                .await?;
-                kv_client = KvClient::connect(
-                    Endpoint::from_shared(cli.quorum_addr.clone())?
-                        .connect_timeout(Duration::from_secs(5)),
-                )
-                .await?;
+                let ch = connect_to_leader(&cluster).await.unwrap();
+                watch_client = WatchClient::new(ch.clone());
+                kv_client = KvClient::new(ch);
             }
             Err(e) => {
                 eprintln!("watch error: {}, reconnecting in 1s", e);
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                watch_client = WatchClient::connect(
-                    Endpoint::from_shared(cli.quorum_addr.clone())?
-                        .connect_timeout(Duration::from_secs(5)),
-                )
-                .await?;
-                kv_client = KvClient::connect(
-                    Endpoint::from_shared(cli.quorum_addr.clone())?
-                        .connect_timeout(Duration::from_secs(5)),
-                )
-                .await?;
+                let ch = connect_to_leader(&cluster).await.unwrap();
+                watch_client = WatchClient::new(ch.clone());
+                kv_client = KvClient::new(ch);
             }
         }
     }
+}
+
+fn normalize_addr(addr: &str) -> String {
+    if addr.starts_with(':') {
+        format!("127.0.0.1{}", addr)
+    } else {
+        addr.to_string()
+    }
+}
+
+async fn connect_to_leader(cluster: &HashMap<String, String>) -> anyhow::Result<Channel> {
+    let addrs: Vec<String> = cluster.values().map(|s| normalize_addr(s)).collect();
+    for addr in &addrs {
+        eprintln!("connecting to quorum-db at {}", addr);
+        let endpoint = Endpoint::from_shared(format!("http://{}", addr))?
+            .connect_timeout(Duration::from_secs(3));
+        match endpoint.connect().await {
+            Ok(ch) => {
+                let mut kv = KvClient::new(ch.clone());
+                let req = PutRequest {
+                    key: b"/internal/health".to_vec(),
+                    value: b"ping".to_vec(),
+                };
+                match kv.put(req).await {
+                    Ok(_) => return Ok(ch),
+                    Err(status) => {
+                        if status.code() == Code::Unavailable
+                            && status.message().starts_with("leader: ")
+                        {
+                            let leader_id = status.message().strip_prefix("leader: ").unwrap_or("");
+                            eprintln!("redirected to leader {}", leader_id);
+                            if let Some(leader_addr) = cluster.get(leader_id) {
+                                let leader_ep = Endpoint::from_shared(format!("http://{}", normalize_addr(leader_addr)))?
+                                    .connect_timeout(Duration::from_secs(3));
+                                match leader_ep.connect().await {
+                                    Ok(lch) => return Ok(lch),
+                                    Err(e) => {
+                                        eprintln!("connect to leader {} failed: {}", leader_addr, e);
+                                        continue;
+                                    }
+                                }
+                            }
+                        } else {
+                            eprintln!("health check failed at {}: {}", addr, status.message());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("connection failed at {}: {}", addr, e);
+            }
+        }
+    }
+    anyhow::bail!("could not connect to any quorum-db node");
+}
+
+fn parse_cluster(cluster: &str) -> HashMap<String, String> {
+    let mut result = HashMap::new();
+    for part in cluster.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some(eq) = part.find('=') {
+            let id = part[..eq].to_string();
+            let addr = part[eq + 1..].to_string();
+            result.insert(id, addr);
+        }
+    }
+    result
+}
+
+async fn connect_forged(socket: &str) -> anyhow::Result<ForgeRuntimeClient<Channel>> {
+    let socket = socket.to_string();
+    let channel = Endpoint::try_from("http://[::]:0")?
+        .connect_with_connector(service_fn(move |_: Uri| {
+            let socket = socket.clone();
+            async move {
+                let stream = UnixStream::connect(&socket).await?;
+                Ok::<_, std::io::Error>(TokioIo::new(stream))
+            }
+        }))
+        .await?;
+    Ok(ForgeRuntimeClient::new(channel))
 }
 
 async fn heartbeat_loop(mut client: Kv, node_id: &str) {
@@ -132,8 +207,7 @@ async fn watch_assignment_loop(
     watch_client: &mut Watch,
     kv_client: &mut Kv,
     prefix: &str,
-    data_dir: &PathBuf,
-    image_addr: &str,
+    forge_socket: &str,
     node_id: &str,
 ) -> anyhow::Result<()> {
     let mut stream = watch_client
@@ -159,9 +233,9 @@ async fn watch_assignment_loop(
 
                     eprintln!("assignment: starting container {}", container_name);
 
-                    let image_name = spec["image"].as_str().unwrap_or("unknown");
-                    let image_path = download_image(image_name, image_addr).await;
+                    let mut forged = connect_forged(forge_socket).await?;
 
+                    let image_name = spec["image"].as_str().unwrap_or("unknown");
                     let memory = spec["memory"].as_str().map(|s| s.to_string());
                     let cpus = spec["cpus"].as_f64();
                     let env: Vec<String> = spec["env"]
@@ -180,20 +254,19 @@ async fn watch_assignment_loop(
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let detached = true;
 
-                    let ec = container::run_container(
-                        data_dir,
-                        &image_path,
-                        &container_name,
-                        memory.as_deref(),
-                        cpus,
-                        &env,
-                        &cmd,
-                        detached,
-                    );
+                    let req = RunRequest {
+                        image: image_name.to_string(),
+                        name: container_name.clone(),
+                        memory: memory.unwrap_or_default(),
+                        cpus: cpus.unwrap_or(0.0),
+                        env,
+                        cmd,
+                    };
 
-                    let status = match &ec {
+                    let result = forged.run(req).await;
+
+                    let status = match &result {
                         Ok(_) => "running",
                         Err(e) => {
                             eprintln!("failed to start container {}: {}", container_name, e);
@@ -201,17 +274,12 @@ async fn watch_assignment_loop(
                         }
                     };
 
-                    let ec_val: Option<i32> = match ec {
-                        Ok(code) => Some(code),
-                        Err(_) => Some(-1),
-                    };
-
                     let container_status = serde_json::json!({
                         "container_name": container_name,
                         "node_id": node_id,
                         "status": status,
                         "pid": 0,
-                        "exit_code": ec_val,
+                        "exit_code": 0,
                         "started_at": Utc::now().to_rfc3339(),
                         "finished_at": serde_json::Value::Null,
                     });
@@ -232,51 +300,24 @@ async fn watch_assignment_loop(
                         .unwrap_or(&key)
                         .to_string();
                     eprintln!("assignment removed: stopping container {}", name);
-                    container::kill_container(data_dir, &name).ok();
-                    container::remove_container(data_dir, &name).ok();
+
+                    let forged_socket = forge_socket.to_string();
+                    tokio::spawn(async move {
+                        match connect_forged(&forged_socket).await {
+                            Ok(mut forged) => {
+                                forged.stop(StopRequest { name: name.clone(), timeout: 10 }).await.ok();
+                                forged.kill(KillRequest { name: name.clone() }).await.ok();
+                                forged.remove(RemoveRequest { name }).await.ok();
+                            }
+                            Err(e) => eprintln!("stop {}: failed to connect to forged: {}", name, e),
+                        }
+                    });
                 }
             }
         }
     }
 
     Ok(())
-}
-
-async fn download_image(name: &str, image_addr: &str) -> String {
-    let images_dir = "/var/lib/forge/images";
-    tokio::fs::create_dir_all(images_dir).await.unwrap_or_default();
-    let dest = format!("{}/{}.tar", images_dir, name);
-
-    if std::path::Path::new(&dest).exists() {
-        return dest;
-    }
-
-    let url = format!("{}/images/{}", image_addr.trim_end_matches('/'), name);
-    eprintln!("downloading image from {}", url);
-
-    match reqwest::get(&url).await {
-        Ok(resp) => {
-            if let Err(e) = resp.error_for_status_ref() {
-                eprintln!("image download failed: {}", e);
-                return dest;
-            }
-            use futures_util::StreamExt;
-            let mut file = tokio::fs::File::create(&dest).await.unwrap();
-            let mut stream = resp.bytes_stream();
-            while let Some(chunk) = stream.next().await {
-                if let Ok(bytes) = chunk {
-                    use tokio::io::AsyncWriteExt;
-                    file.write_all(&bytes).await.unwrap();
-                }
-            }
-            eprintln!("image downloaded: {}", dest);
-        }
-        Err(e) => {
-            eprintln!("image download request failed: {}", e);
-        }
-    }
-
-    dest
 }
 
 fn hostname() -> String {

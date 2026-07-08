@@ -1,0 +1,54 @@
+syntax = "proto3";
+package nimbus.v1;
+
+option go_package = "nimbus/gen/nimbus/v1;nimbusv1";
+
+service ForgeRuntime {
+  rpc Run(RunRequest) returns (RunResponse);
+  rpc Start(StartRequest) returns (StartResponse);
+  rpc Stop(StopRequest) returns (Empty);
+  rpc Kill(KillRequest) returns (Empty);
+  rpc Remove(RemoveRequest) returns (Empty);
+  rpc Inspect(InspectRequest) returns (InspectResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Logs(LogsRequest) returns (LogsResponse);
+}
+
+message RunRequest {
+  string image = 1;
+  string name = 2;
+  string memory = 3;
+  double cpus = 4;
+  repeated string env = 5;
+  repeated string cmd = 6;
+}
+message RunResponse { string name = 1; }
+
+message StartRequest { string name = 1; }
+message StartResponse { string name = 1; }
+
+message StopRequest { string name = 1; int32 timeout = 2; }
+
+message KillRequest { string name = 1; }
+
+message RemoveRequest { string name = 1; }
+
+message InspectRequest { string name = 1; }
+message InspectResponse {
+  string name = 1;
+  string status = 2;
+  int32 pid = 3;
+  int32 exit_code = 4;
+  string created_at = 5;
+  string started_at = 6;
+  string finished_at = 7;
+  string image = 8;
+}
+
+message ListRequest { bool all = 1; }
+message ListResponse { repeated InspectResponse containers = 1; }
+
+message LogsRequest { string name = 1; int32 tail = 2; }
+message LogsResponse { string stdout = 1; string stderr = 2; }
+
+message Empty {}

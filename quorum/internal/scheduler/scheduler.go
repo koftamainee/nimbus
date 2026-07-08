@@ -6,35 +6,64 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	quorumv1 "quorum/gen/quorum/v1"
-	"quorum/internal/raft"
-	"quorum/internal/store"
 )
 
 type Scheduler struct {
-	raft  *raft.Raft
-	store *store.Store
-	nm    *NodeManager
-	stop  chan struct{}
+	kvClient    quorumv1.KVClient
+	watchClient quorumv1.WatchClient
+	nm          *NodeManager
+	nodeID      string
+	trigger     chan struct{}
+	stop        chan struct{}
 }
 
-func New(r *raft.Raft, st *store.Store, nm *NodeManager) *Scheduler {
+func New(kv quorumv1.KVClient, wc quorumv1.WatchClient, nm *NodeManager, nodeID string) *Scheduler {
 	return &Scheduler{
-		raft:  r,
-		store: st,
-		nm:    nm,
-		stop:  make(chan struct{}),
+		kvClient:    kv,
+		watchClient: wc,
+		nm:          nm,
+		nodeID:      nodeID,
+		trigger:     make(chan struct{}, 1),
+		stop:        make(chan struct{}),
 	}
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
+	for {
+		if s.isLeader(ctx) {
+			s.runActive(ctx)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stop:
+			return
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+func (s *Scheduler) runActive(ctx context.Context) {
+	slog.Info("scheduler active (leader)")
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go s.watchDesired(ctx)
+
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+
+	s.reconcile(ctx)
 
 	for {
 		select {
@@ -42,22 +71,64 @@ func (s *Scheduler) Run(ctx context.Context) {
 			return
 		case <-s.stop:
 			return
+		case <-s.trigger:
+			s.reconcile(ctx)
 		case <-ticker.C:
-			s.reconcile()
+			s.reconcile(ctx)
 		}
 	}
+}
+
+func (s *Scheduler) watchDesired(ctx context.Context) {
+	for {
+		stream, err := s.watchClient.Watch(ctx, &quorumv1.WatchRequest{Key: []byte(DesiredPrefix)})
+		if err != nil {
+			st, ok := status.FromError(err)
+			if ok && st.Code() == codes.Unavailable && strings.HasPrefix(st.Message(), "leader: ") {
+				slog.Warn("scheduler leader changed, reconnecting", "msg", st.Message())
+				time.Sleep(time.Second)
+				continue
+			}
+			slog.Error("scheduler watch failed", "error", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				slog.Warn("scheduler watch stream broken", "error", err)
+				time.Sleep(time.Second)
+				break
+			}
+			if len(resp.Events) > 0 {
+				select {
+				case s.trigger <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+}
+
+func (s *Scheduler) isLeader(ctx context.Context) bool {
+	_, err := s.kvClient.Put(ctx, &quorumv1.PutRequest{
+		Key:   []byte("/internal/scheduler/lease"),
+		Value: []byte(s.nodeID),
+	})
+	return err == nil
 }
 
 func (s *Scheduler) Stop() {
 	close(s.stop)
 }
 
-func (s *Scheduler) reconcile() {
-	desired := s.listDesired()
-	aliveNodes := s.listAliveNodes()
+func (s *Scheduler) reconcile(ctx context.Context) {
+	desired := s.listDesired(ctx)
+	aliveNodes := s.nm.AliveNodes()
 
 	for _, dc := range desired {
-		assignments := s.listAssignmentsForContainer(dc.Name)
+		assignments := s.listAssignmentsForContainer(ctx, dc.Name)
 		running := 0
 		for _, a := range assignments {
 			if a.Status == "assigned" || a.Status == "running" {
@@ -67,37 +138,61 @@ func (s *Scheduler) reconcile() {
 
 		if running < dc.Replicas {
 			needed := dc.Replicas - running
+			usedNodes := make(map[string]bool)
+			for _, a := range assignments {
+				if a.Status == "assigned" || a.Status == "running" {
+					usedNodes[a.NodeID] = true
+				}
+			}
+			nextIdx := nextIndex(assignments, dc.Name)
 			for i := 0; i < needed; i++ {
 				if len(aliveNodes) == 0 {
 					break
 				}
-				node := s.pickNode(aliveNodes, s.assignmentCountByNode())
+				candidates := aliveNodes
+				if len(usedNodes) < len(aliveNodes) {
+					candidates = nil
+					for _, n := range aliveNodes {
+						if !usedNodes[n] {
+							candidates = append(candidates, n)
+						}
+					}
+				}
+				node := s.pickNode(candidates, s.assignmentCountByNode(ctx))
 				if node == "" {
 					break
 				}
-				s.createAssignment(node, dc)
+				usedNodes[node] = true
+				containerName := fmt.Sprintf("%s-%d", dc.Name, nextIdx)
+				s.createAssignment(ctx, node, dc, containerName)
+				nextIdx++
 			}
 		}
 
 		if running > dc.Replicas {
 			excess := running - dc.Replicas
+			sort.Slice(assignments, func(i, j int) bool {
+				iIdx := parseIndex(assignments[i].ContainerName, dc.Name)
+				jIdx := parseIndex(assignments[j].ContainerName, dc.Name)
+				return iIdx > jIdx
+			})
 			for _, a := range assignments {
 				if excess <= 0 {
 					break
 				}
 				if a.Status == "assigned" || a.Status == "running" {
-					s.removeAssignment(a.NodeID, a.ContainerName)
+					s.removeAssignment(ctx, a.NodeID, a.ContainerName)
 					excess--
 				}
 			}
 		}
 
-		s.rescheduleFromDeadNodes(dc, aliveNodes)
+		s.rescheduleFromDeadNodes(ctx, dc, aliveNodes)
 	}
 }
 
-func (s *Scheduler) rescheduleFromDeadNodes(dc DesiredContainer, aliveNodes []string) {
-	assignments := s.listAssignmentsForContainer(dc.Name)
+func (s *Scheduler) rescheduleFromDeadNodes(ctx context.Context, dc DesiredContainer, aliveNodes []string) {
+	assignments := s.listAssignmentsForContainer(ctx, dc.Name)
 	for _, a := range assignments {
 		if a.Status != "assigned" && a.Status != "running" {
 			continue
@@ -114,14 +209,21 @@ func (s *Scheduler) rescheduleFromDeadNodes(dc DesiredContainer, aliveNodes []st
 		}
 		slog.Info("rescheduling container from dead node",
 			"container", dc.Name, "node", a.NodeID)
-		s.removeAssignment(a.NodeID, a.ContainerName)
+		s.removeAssignment(ctx, a.NodeID, a.ContainerName)
 	}
 }
 
-func (s *Scheduler) listDesired() []DesiredContainer {
-	kvs, _ := s.store.Range(DesiredPrefix, prefixEnd(DesiredPrefix), 0)
+func (s *Scheduler) listDesired(ctx context.Context) []DesiredContainer {
+	resp, err := s.kvClient.Range(ctx, &quorumv1.RangeRequest{
+		Key:      []byte(DesiredPrefix),
+		RangeEnd: []byte(prefixEnd(DesiredPrefix)),
+	})
+	if err != nil {
+		return nil
+	}
+
 	var result []DesiredContainer
-	for _, kv := range kvs {
+	for _, kv := range resp.Kvs {
 		key := string(kv.Key)
 		if !strings.HasSuffix(key, "/spec") {
 			continue
@@ -136,32 +238,36 @@ func (s *Scheduler) listDesired() []DesiredContainer {
 }
 
 func (s *Scheduler) listAliveNodes() []string {
-	nodeKVs, _ := s.store.Range("/nodes/", prefixEnd("/nodes/"), 0)
-	var alive []string
-	for _, kv := range nodeKVs {
-		id := string(kv.Key)
-		id = id[len("/nodes/"):]
-		if s.nm.IsAlive(id) {
-			alive = append(alive, id)
-		}
-	}
-	return alive
+	return s.nm.AliveNodes()
 }
 
-func (s *Scheduler) listAssignmentsForContainer(name string) []Assignment {
-	nodeKVs, _ := s.store.Range("/nodes/", prefixEnd("/nodes/"), 0)
+func (s *Scheduler) listAssignmentsForContainer(ctx context.Context, name string) []Assignment {
+	nodeResp, err := s.kvClient.Range(ctx, &quorumv1.RangeRequest{
+		Key:      []byte("/nodes/"),
+		RangeEnd: []byte(prefixEnd("/nodes/")),
+	})
+	if err != nil {
+		return nil
+	}
+
 	var result []Assignment
-	for _, nkv := range nodeKVs {
+	for _, nkv := range nodeResp.Kvs {
 		nodeID := string(nkv.Key)
 		nodeID = nodeID[len("/nodes/"):]
 		prefix := fmt.Sprintf(AssignPrefix, nodeID)
-		akvs, _ := s.store.Range(prefix, prefixEnd(prefix), 0)
-		for _, akv := range akvs {
+		akvs, err := s.kvClient.Range(ctx, &quorumv1.RangeRequest{
+			Key:      []byte(prefix),
+			RangeEnd: []byte(prefixEnd(prefix)),
+		})
+		if err != nil {
+			continue
+		}
+		for _, akv := range akvs.Kvs {
 			var a Assignment
 			if err := json.Unmarshal(akv.Value, &a); err != nil {
 				continue
 			}
-			if a.ContainerName == name {
+			if strings.HasPrefix(a.ContainerName, name+"-") {
 				result = append(result, a)
 			}
 		}
@@ -169,15 +275,28 @@ func (s *Scheduler) listAssignmentsForContainer(name string) []Assignment {
 	return result
 }
 
-func (s *Scheduler) assignmentCountByNode() map[string]int {
+func (s *Scheduler) assignmentCountByNode(ctx context.Context) map[string]int {
 	counts := make(map[string]int)
-	nodeKVs, _ := s.store.Range("/nodes/", prefixEnd("/nodes/"), 0)
-	for _, nkv := range nodeKVs {
+	nodeResp, err := s.kvClient.Range(ctx, &quorumv1.RangeRequest{
+		Key:      []byte("/nodes/"),
+		RangeEnd: []byte(prefixEnd("/nodes/")),
+	})
+	if err != nil {
+		return counts
+	}
+
+	for _, nkv := range nodeResp.Kvs {
 		nodeID := string(nkv.Key)
 		nodeID = nodeID[len("/nodes/"):]
 		prefix := fmt.Sprintf(AssignPrefix, nodeID)
-		akvs, _ := s.store.Range(prefix, prefixEnd(prefix), 0)
-		for _, akv := range akvs {
+		akvs, err := s.kvClient.Range(ctx, &quorumv1.RangeRequest{
+			Key:      []byte(prefix),
+			RangeEnd: []byte(prefixEnd(prefix)),
+		})
+		if err != nil {
+			continue
+		}
+		for _, akv := range akvs.Kvs {
 			var a Assignment
 			if err := json.Unmarshal(akv.Value, &a); err != nil {
 				continue
@@ -200,38 +319,54 @@ func (s *Scheduler) pickNode(nodes []string, counts map[string]int) string {
 	return nodes[0]
 }
 
-func (s *Scheduler) createAssignment(nodeID string, dc DesiredContainer) {
+func (s *Scheduler) createAssignment(ctx context.Context, nodeID string, dc DesiredContainer, containerName string) {
 	a := Assignment{
-		ContainerName: dc.Name,
+		ContainerName: containerName,
 		Spec:          dc,
 		NodeID:        nodeID,
 		Status:        "assigned",
 	}
 	data, _ := json.Marshal(a)
-	key := fmt.Sprintf(AssignKey, nodeID, dc.Name)
+	key := fmt.Sprintf(AssignKey, nodeID, containerName)
 
-	cmd := &quorumv1.InternalRaftRequest{
-		Cmd: &quorumv1.InternalRaftRequest_Put{
-			Put: &quorumv1.PutRequest{Key: []byte(key), Value: data},
-		},
-	}
-	cmdData, _ := proto.Marshal(cmd)
-	if err := s.raft.Propose(context.Background(), cmdData); err != nil {
-		slog.Warn("failed to create assignment", "container", dc.Name, "node", nodeID, "error", err)
+	_, err := s.kvClient.Put(ctx, &quorumv1.PutRequest{
+		Key: []byte(key), Value: data,
+	})
+	if err != nil {
+		slog.Warn("failed to create assignment", "container", containerName, "node", nodeID, "error", err)
 	}
 }
 
-func (s *Scheduler) removeAssignment(nodeID, containerName string) {
+func (s *Scheduler) removeAssignment(ctx context.Context, nodeID, containerName string) {
 	key := fmt.Sprintf(AssignKey, nodeID, containerName)
-	cmd := &quorumv1.InternalRaftRequest{
-		Cmd: &quorumv1.InternalRaftRequest_Delete{
-			Delete: &quorumv1.DeleteRequest{Key: []byte(key)},
-		},
-	}
-	cmdData, _ := proto.Marshal(cmd)
-	if err := s.raft.Propose(context.Background(), cmdData); err != nil {
+	_, err := s.kvClient.Delete(ctx, &quorumv1.DeleteRequest{Key: []byte(key)})
+	if err != nil {
 		slog.Warn("failed to remove assignment", "container", containerName, "error", err)
 	}
+	s.kvClient.Delete(ctx, &quorumv1.DeleteRequest{
+		Key: []byte(fmt.Sprintf("/containers/%s/status", containerName)),
+	})
+}
+
+func parseIndex(containerName, baseName string) int {
+	if !strings.HasPrefix(containerName, baseName+"-") {
+		return 0
+	}
+	i, err := strconv.Atoi(containerName[len(baseName)+1:])
+	if err != nil {
+		return 0
+	}
+	return i
+}
+
+func nextIndex(assignments []Assignment, baseName string) int {
+	maxIdx := 0
+	for _, a := range assignments {
+		if idx := parseIndex(a.ContainerName, baseName); idx > maxIdx {
+			maxIdx = idx
+		}
+	}
+	return maxIdx + 1
 }
 
 func prefixEnd(prefix string) string {

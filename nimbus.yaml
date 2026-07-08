@@ -1,0 +1,22 @@
+binary_dir: ./build
+data_dir: ./build/data
+
+masters:
+  - id: node1
+    db_addr: :10101
+    api_addr: :10102
+  - id: node2
+    db_addr: :10201
+    api_addr: :10202
+  - id: node3
+    db_addr: :10301
+    api_addr: :10302
+
+worker_count: 3
+
+registry:
+  addr: :11111
+
+forged:
+  socket: /var/run/forge.sock
+  registry_addr: http://127.0.0.1:11111

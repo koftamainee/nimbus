@@ -361,3 +361,18 @@ func TestEventsSinceTxn(t *testing.T) {
 	require.Equal(t, quorumv1.Event_DELETE, events[2].Type)
 	require.Equal(t, "y", string(events[2].Key))
 }
+
+func TestEventsSincePrefixMatch(t *testing.T) {
+	s := New()
+	s.Apply(putCmd("/containers/nginx/spec", "nginx"))
+	s.Apply(putCmd("/containers/redis/spec", "redis"))
+	s.Apply(putCmd("/nodes/worker1/heartbeat", "ping"))
+
+	events := s.EventsSince(0, "/containers/")
+	require.Len(t, events, 2)
+	require.Equal(t, "/containers/nginx/spec", string(events[0].Key))
+	require.Equal(t, "/containers/redis/spec", string(events[1].Key))
+
+	events = s.EventsSince(0, "/nodes/worker1/assignments/")
+	require.Len(t, events, 0)
+}

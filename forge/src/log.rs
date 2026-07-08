@@ -35,6 +35,46 @@ pub fn write_log(data_dir: &Path, name: &str, stream: &str, message: &str) -> an
     Ok(())
 }
 
+pub fn read_logs_buf(
+    data_dir: &Path,
+    name: &str,
+    tail: Option<usize>,
+) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    let path = log_path(data_dir, name);
+    let file = fs::File::open(&path)
+        .map_err(|e| anyhow::anyhow!("cannot open log for {}: {}", name, e))?;
+    let mut reader = BufReader::new(file);
+
+    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+    let lines = if let Some(n) = tail {
+        if lines.len() > n {
+            lines[lines.len() - n..].to_vec()
+        } else {
+            lines.clone()
+        }
+    } else {
+        lines
+    };
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    for line in &lines {
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+            let msg = entry["log"].as_str().unwrap_or(line);
+            let stream = entry["stream"].as_str().unwrap_or("stdout");
+            let out = if stream == "stderr" { &mut stderr } else { &mut stdout };
+            out.extend_from_slice(msg.as_bytes());
+            if !msg.ends_with('\n') {
+                out.push(b'\n');
+            }
+        } else {
+            stdout.extend_from_slice(line.as_bytes());
+            stdout.push(b'\n');
+        }
+    }
+    Ok((stdout, stderr))
+}
+
 pub fn read_logs(
     data_dir: &Path,
     name: &str,

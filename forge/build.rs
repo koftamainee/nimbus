@@ -7,4 +7,12 @@ fn main() {
             &["../proto"],
         )
         .unwrap();
+    tonic_build::configure()
+        .build_client(true)
+        .build_server(true)
+        .compile_protos(
+            &["../proto/nimbus/v1/forge.proto"],
+            &["../proto"],
+        )
+        .unwrap();
 }

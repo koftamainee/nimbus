@@ -5,7 +5,7 @@ use chrono::Utc;
 
 use crate::cgroup::Cgroup;
 use crate::config::{ContainerConfig, ContainerStatus};
-use crate::image::{unpack_image, Manifest};
+use crate::image::{pull_image, unpack_image, Manifest};
 use crate::isolation;
 use crate::log;
 
@@ -169,9 +169,10 @@ fn spawn_and_monitor(
     Ok(exit_code)
 }
 
-pub fn run_container(
+pub async fn run_container(
     data_dir: &Path,
     image_path: &str,
+    image_registry: Option<&str>,
     name: &str,
     memory: Option<&str>,
     cpus: Option<f64>,
@@ -187,7 +188,17 @@ pub fn run_container(
 
     let rootfs = container_dir.join("rootfs");
     std::fs::create_dir_all(&rootfs)?;
-    let manifest = unpack_image(image_path, &container_dir)?;
+
+    let resolved = if Path::new(image_path).exists() {
+        image_path.to_string()
+    } else if let Some(registry) = image_registry {
+        let images_dir = data_dir.join("images");
+        pull_image(image_path, registry, &images_dir).await?
+    } else {
+        image_path.to_string()
+    };
+
+    let manifest = unpack_image(&resolved, &container_dir)?;
 
     let final_cmd = resolve_cmd(&manifest, user_cmd);
     let cli_parsed = parse_env(cli_env);

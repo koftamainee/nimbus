@@ -2,6 +2,7 @@ package store
 
 import (
 	"sort"
+	"strings"
 	"sync"
 
 	"google.golang.org/protobuf/proto"
@@ -205,7 +206,7 @@ func (s *Store) EventsSince(rev int64, key string) []*quorumv1.Event {
 
 	out := make([]*quorumv1.Event, 0, len(s.events)-start)
 	for _, e := range s.events[start:] {
-		if string(e.Key) == key {
+		if strings.HasPrefix(string(e.Key), key) {
 			out = append(out, e)
 		}
 	}

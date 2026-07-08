@@ -2,6 +2,9 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Manifest {
     #[serde(default)]
@@ -48,6 +51,31 @@ pub fn unpack_image(tar_path: &str, dest: &Path) -> anyhow::Result<Manifest> {
             workdir: default_workdir(),
         })
     }
+}
+
+pub async fn pull_image(name: &str, registry_addr: &str, images_dir: &Path) -> anyhow::Result<String> {
+    fs::create_dir_all(images_dir)?;
+    let dest = images_dir.join(format!("{}.tar", name));
+
+    if dest.exists() {
+        return Ok(dest.to_string_lossy().to_string());
+    }
+
+    let url = format!("{}/images/{}", registry_addr.trim_end_matches('/'), name);
+    let resp = reqwest::get(&url).await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("failed to pull image '{}': HTTP {}", name, resp.status());
+    }
+
+    let mut file = tokio::fs::File::create(&dest).await?;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk?;
+        file.write_all(&bytes).await?;
+    }
+
+    eprintln!("image pulled: {}", dest.to_string_lossy());
+    Ok(dest.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
