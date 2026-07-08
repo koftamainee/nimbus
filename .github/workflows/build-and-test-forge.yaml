@@ -3,11 +3,13 @@ on:
   push:
     paths:
       - 'forge/**'
+      - 'proto/**'
   pull_request:
     branches:
       - master
     paths:
       - 'forge/**'
+      - 'proto/**'
 
 jobs:
   test:
@@ -16,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo check
       - run: cargo test --all-features
     defaults:
