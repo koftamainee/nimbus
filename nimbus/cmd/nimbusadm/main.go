@@ -84,7 +84,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmdStart(cfg)
+	args := flag.Args()
+	cmd := "run"
+	if len(args) > 0 {
+		cmd = args[0]
+	}
+
+	switch cmd {
+	case "run":
+		cmdRun(cfg)
+	case "start":
+		cmdStart(cfg)
+	case "stop":
+		cmdStop(cfg)
+	default:
+		fmt.Fprintf(os.Stderr, "Usage: nimbusadm [-f config] <run|start|stop>\n")
+		os.Exit(1)
+	}
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -217,21 +233,9 @@ func checkPidFiles(cfg *Config) error {
 	return nil
 }
 
-func cmdStart(cfg *Config) {
-	logger := slog.With("component", "nimbusadm")
-
-	if err := checkPidFiles(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		fmt.Fprintln(os.Stderr, "Run 'nimbusadm stop' first or remove pid files manually.")
-		os.Exit(1)
-	}
-
-	ensureDirs(cfg)
-
+func startAll(cfg *Config, logger *slog.Logger) []*proc {
 	cluster := dbCluster(cfg)
 	var procs []*proc
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	for _, m := range cfg.Masters {
 		name := "quorum-db-" + m.ID
@@ -301,13 +305,126 @@ func cmdStart(cfg *Config) {
 		}
 	}
 
+	return procs
+}
+
+func cmdRun(cfg *Config) {
+	logger := slog.With("component", "nimbusadm")
+
+	if err := checkPidFiles(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		fmt.Fprintln(os.Stderr, "Run 'nimbusadm stop' first or remove pid files manually.")
+		os.Exit(1)
+	}
+
+	ensureDirs(cfg)
+	procs := startAll(cfg, logger)
+
 	logger.Info("all processes started", "count", len(procs))
 	fmt.Printf("Cluster running: %d masters, %d workers\n", len(cfg.Masters), len(cfg.Workers))
 	fmt.Println("Press Ctrl+C to stop.")
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
+
 	logger.Info("shutting down...")
 	stopProcs(logger, procs)
+}
+
+func cmdStart(cfg *Config) {
+	logger := slog.With("component", "nimbusadm")
+
+	if err := checkPidFiles(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		fmt.Fprintln(os.Stderr, "Run 'nimbusadm stop' first or remove pid files manually.")
+		os.Exit(1)
+	}
+
+	ensureDirs(cfg)
+	procs := startAll(cfg, logger)
+
+	logger.Info("all processes started", "count", len(procs))
+	fmt.Printf("Cluster running: %d masters, %d workers\n", len(cfg.Masters), len(cfg.Workers))
+}
+
+type procInfo struct {
+	name string
+	pid  int
+}
+
+func cmdStop(cfg *Config) {
+	logger := slog.With("component", "nimbusadm")
+
+	var entries []procInfo
+
+	add := func(name string) {
+		data, err := os.ReadFile(pidPath(cfg, name))
+		if err != nil {
+			return
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			return
+		}
+		entries = append(entries, procInfo{name, pid})
+	}
+
+	for _, m := range cfg.Masters {
+		add("quorum-db-" + m.ID)
+		add("quorum-api-" + m.ID)
+		add("quorum-scheduler-" + m.ID)
+	}
+	if cfg.Registry != nil {
+		add("nimbus-registry")
+	}
+	if cfg.Forged != nil {
+		add("forged")
+	}
+	for _, w := range cfg.Workers {
+		add("forge-agent-" + w)
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("no pid files found — cluster not running")
+		return
+	}
+
+	for i := len(entries) - 1; i >= 0; i-- {
+		logger.Info("stopping", "name", entries[i].name, "pid", entries[i].pid)
+		syscall.Kill(-entries[i].pid, syscall.SIGTERM)
+	}
+
+	deadline := time.After(10 * time.Second)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+
+loop:
+	for _, e := range entries {
+		for {
+			if err := syscall.Kill(e.pid, 0); err != nil {
+				break
+			}
+			select {
+			case <-deadline:
+				break loop
+			case <-tick.C:
+			}
+		}
+	}
+
+	for _, e := range entries {
+		if err := syscall.Kill(e.pid, 0); err == nil {
+			logger.Warn("timeout, sending SIGKILL", "name", e.name, "pid", e.pid)
+			syscall.Kill(-e.pid, syscall.SIGKILL)
+		}
+	}
+
+	for _, e := range entries {
+		os.Remove(pidPath(cfg, e.name))
+	}
+
+	logger.Info("stopped")
 }
 
 func stopProcs(logger *slog.Logger, procs []*proc) {

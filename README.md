@@ -9,7 +9,7 @@ Does not aim to replace Kubernetes — it is a deliberately trimmed but honestly
 ## Architecture
 ![Architecture](assets/architecture.png)
 See `docs/` for more detailed explanation of services and architecture
-
+6
 
 ## Quick start
 

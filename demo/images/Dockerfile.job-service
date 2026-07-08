@@ -1,0 +1,7 @@
+FROM golang:1.23-alpine AS build
+WORKDIR /src
+COPY job-service/ .
+RUN CGO_ENABLED=0 go build -o /job-service .
+
+FROM scratch
+COPY --from=build /job-service /job-service
